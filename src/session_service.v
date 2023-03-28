@@ -27,8 +27,7 @@ fn (mut app App) create_session(user_id int) Session {
 }
 
 fn (mut app App) login(email string, password string) !Session {
-    user_id := app.get_user_id(email, password)
-    if user_id == 0 {
+    user_id := app.get_user_id(email, password) or {
         return error('Email or password is incorrect. Please try again!')
     }
 

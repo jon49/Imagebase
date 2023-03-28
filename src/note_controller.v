@@ -1,12 +1,12 @@
 module main
 
 import json
-import note
+import notes
 import vweb
 
 ['/notes'; post]
 fn (mut app App) create() vweb.Result {
-    result := note.create(mut &app.db, app.req.data) or {
+    result := notes.create(mut &app.db, app.req.data) or {
         return app.message_response(err)
     }
 
@@ -17,7 +17,7 @@ fn (mut app App) create() vweb.Result {
 
 ['/notes/:id'; get]
 fn (mut app App) read(id int) vweb.Result {
-    result := note.get(&app.db, id) or {
+    result := notes.get(&app.db, id) or {
         return app.message_response(err)
     }
 
@@ -26,7 +26,7 @@ fn (mut app App) read(id int) vweb.Result {
 
 ['/notes/'; get]
 fn (mut app App) read_all() vweb.Result {
-    result := note.get_all(&app.db) or {
+    result := notes.get_all(&app.db) or {
         return app.message_response(err)
     }
 
@@ -35,7 +35,7 @@ fn (mut app App) read_all() vweb.Result {
 
 ['/notes/:id'; put]
 fn (mut app App) update(id int) vweb.Result {
-    result := note.update(mut &app.db, id, app.req.data) or {
+    result := notes.update(mut &app.db, id, app.req.data) or {
         return app.message_response(err)
     }
 
@@ -44,7 +44,7 @@ fn (mut app App) update(id int) vweb.Result {
 
 ['/notes/:id'; delete]
 fn (mut app App) delete(id int) vweb.Result {
-    result := note.delete(mut &app.db, id) or {
+    result := notes.delete(mut &app.db, id) or {
         return app.message_response(err)
     }
     return app.message_response(result)

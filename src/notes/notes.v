@@ -1,19 +1,23 @@
-module note
+module notes
 
 import db.sqlite
-import msg { validate, assert_found }
+import msg { validate, assert_found, has_content }
 
 const (
 	unique_message = 'Please provide a unique message for Note'
     invalid_json = 'Malformed JSON received.'
 )
 
-[table: 'Notes']
+[table: 'notes']
 pub struct Note {
 pub:
 	id      int    [primary; sql: serial]
 	message string [sql: 'detail'; unique]
 	status  bool   [nonull]
+}
+
+fn temp(note Note) {
+    println(note.id)
 }
 
 pub fn create(mut db &sqlite.DB, data string) !Note {
@@ -44,9 +48,9 @@ pub fn get(db &sqlite.DB, id int) !Note {
 		select from Note where id == id
 	}
 
-    assert_found(note.id, 'note')!
+    assert_found(note.len, 'note')!
 
-    return note
+    return note[0]
 }
 
 pub fn get_all(db &sqlite.DB) ![]Note {
@@ -54,9 +58,7 @@ pub fn get_all(db &sqlite.DB) ![]Note {
 		select from Note
 	}
 
-    if n.len == 0 {
-        return msg.success()
-    }
+    has_content(n.len)!
 
     return n
 }
@@ -67,15 +69,16 @@ pub fn update(mut db &sqlite.DB, id int, data string) !Note {
 	note_to_update := sql db {
 		select from Note
         where id == id
+        limit 1
 	}
 
-    assert_found(note_to_update.id, 'note')!
+    assert_found(note_to_update.len, 'note')!
 
 	res := sql db {
 		select from Note where message == n.message && id != id limit 1
 	}
 
-    validate(res.id == 0, 'Duplicate notes not allowed!')!
+    validate(res.len == 0, 'Duplicate notes not allowed!')!
 
 	sql db {
 		update Note set message = n.message, status = n.status where id == id

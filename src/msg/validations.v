@@ -12,3 +12,9 @@ pub fn validate(b bool, message string) ! {
     }
 }
 
+pub fn has_content(length int) ! {
+    if length == 0 {
+        return success()
+    }
+}
+
