@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html lang="en">
+    <head>
+        <title></title>
+        <meta charset="UTF-8">
+        <meta name="viewport" content="width=device-width, initial-scale=1">
+        <!-- <link href="css/style.css" rel="stylesheet"> -->
+    </head>
+    <body>
+        <noscript>JavaScript is required to login!</noscript>
+        @if error.len == 0
+            <p class=error>@error</p>
+        @end
+        <div id=login-form></div>
+        <p>New user? <a href="/register">Register here!</a></p>
+        <script>
+            document.getElementById('login-form').outerHTML = `
+                <form method=post>
+                    <label for=email>Email:</label>
+                    <input id=email type=email name=email>
+                    <br>
+                    <label for=password>Password:</label>
+                    <input id=password type=password name=password>
+                    <br>
+                    <button>OK</button>
+                </form>`
+        </script>
+    </body>
+</html>
+
