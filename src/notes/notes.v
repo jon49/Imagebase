@@ -16,10 +16,6 @@ pub:
 	status  bool   [nonull]
 }
 
-fn temp(note Note) {
-    println(note.id)
-}
-
 pub fn create(mut db &sqlite.DB, data string) !Note {
     note := msg.get_data[Note](data)!
 
