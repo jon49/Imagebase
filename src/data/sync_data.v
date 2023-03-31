@@ -25,8 +25,8 @@ pub struct NewUserData {
     value string
 }
 
-pub sync_data(db &sqlite.DB, d SyncData) SyncDataReturn {
-    latest_data = db.get_latest_data(db, d.user_id, d.last_id)
+pub fn sync_data(db &sqlite.DB, d SyncData) SyncDataReturn {
+    latest_data := get_latest_data(db, d.user_id, d.last_id)
     mut last_synced_id := 0
 
     mut new_user_data := []NewUserData{}
@@ -36,12 +36,13 @@ pub sync_data(db &sqlite.DB, d SyncData) SyncDataReturn {
             key: it.key
             user_id: d.user_id
             value: it.value
-         }
-        last_synced_id = save_data(data_to_save);
+         })
+        last_synced_id = save_data(db, data_to_save)
         new_user_data =
             latest_data
-            .filter(fn (x) bool {
-                return !d.uploaded_data.any(it.key == x.key && it.id > x.id)
+            .filter(fn [d](x NewUserData) bool {
+                return !d.uploaded_data
+                    .any(fn [x](y UploadedData) bool { return y.key == x.key && y.id > x.id })
             })
     }
 
@@ -49,11 +50,11 @@ pub sync_data(db &sqlite.DB, d SyncData) SyncDataReturn {
         if last_synced_id > 0 {
             last_synced_id
         } else {
-            max(latest_data.map(it.id));
+            max(latest_data.map(it.id))
         }
 
     return SyncDataReturn{
-        new_user_data: latest_data
+        new_user_data: new_user_data
         last_synced_id: last_synced_id
     }
 }
@@ -65,4 +66,5 @@ fn max(xs []int) int {
     }
     return max_value
 }
+
 

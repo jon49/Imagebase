@@ -17,8 +17,6 @@ pub mut:
     session string
 }
 
-
-
 fn main() {
 	http_port := 8000
 
