@@ -11,7 +11,7 @@ struct Data {
     value string
 }
 
-fn create_db(mut db &sqlite.DB) int {
+fn create_db(db &sqlite.DB) int {
     result := db.exec_none("
 CREATE TABLE IF NOT EXISTS data (
     id INTEGER NOT NULL PRIMARY KEY,
@@ -34,7 +34,7 @@ fn save_data(db &sqlite.DB, data []Data) i64 {
     return db.last_insert_rowid()
 }
 
-fn get_latest_data(db &sqlite.DB, user_id int, last_id int) []NewUserData {
+fn get_latest_data(db &sqlite.DB, user_id int, last_id int) []SimpleData {
     // Once exec_param_many is created I'll be able to use this as a static
     // string instead this dynamic string
     get_data_query := '
@@ -46,14 +46,15 @@ WITH Duplicates AS (
 )
 SELECT d.key, d.value, d.id
 FROM Duplicates d
-WHERE DupNum = 1;'
+WHERE DupNum = 1
+ORDER BY d.id;'
     
     rows, _ := db.exec(get_data_query)
 
-    mut data := []NewUserData{ len: rows.len }
+    mut data := []SimpleData{ len: rows.len }
 
     for i, row in rows {
-        data[i] = NewUserData{
+        data[i] = SimpleData{
             key: row.vals[0]
             value: row.vals[1]
             id: row.vals[2].int()

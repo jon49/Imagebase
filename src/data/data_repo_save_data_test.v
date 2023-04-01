@@ -4,7 +4,7 @@ import db.sqlite
 
 fn test_save_data() {
     mut db := sqlite.connect(":memory:") or { panic(err) }
-    create_db(mut db)
+    create_db(db)
 
     data := [
         Data{
