@@ -3,6 +3,7 @@ module data
 import db.sqlite
 // import msg { validate, assert_found, has_content }
 
+[table: 'data']
 struct Data {
     id int          [primary; sql: serial]
     user_id int     [nonull]
@@ -10,21 +11,27 @@ struct Data {
     value string
 }
 
-fn create_db(mut db &sqlite.DB) {
-    sql db {
-        create table Data
-    }
-    db.exec_none('CREATE UNIQUE INDEX IF NOT EXISTS idx_fetch ON data (id, user_id, key);')
+fn create_db(mut db &sqlite.DB) int {
+    result := db.exec_none("
+CREATE TABLE IF NOT EXISTS data (
+    id INTEGER NOT NULL PRIMARY KEY,
+    user_id INTEGER NOT NULL,
+    key TEXT NOT NULL,
+    value TEXT NULL );
+CREATE UNIQUE INDEX IF NOT EXISTS idx_fetch ON data (id, user_id, key);
+")
+    return result
 }
 
-fn save_data(db &sqlite.DB, data []Data) int {
+fn save_data(db &sqlite.DB, data []Data) i64 {
     for d in data {
         sql db {
             insert d into Data
         }
     }
-    max_id := 'SELECT MAX(id) FROM data;'
-    return max_id.int()
+    /* max_id := 'SELECT MAX(id) FROM data;' */
+    /* return max_id.int() */
+    return db.last_insert_rowid()
 }
 
 fn get_latest_data(db &sqlite.DB, user_id int, last_id int) []NewUserData {

@@ -16,7 +16,8 @@ pub struct SyncData {
 
 pub struct SyncDataReturn {
     new_user_data []NewUserData
-    last_synced_id int
+    conflicted_data []string
+    last_synced_id i64
 }
 
 pub struct NewUserData {
@@ -27,9 +28,10 @@ pub struct NewUserData {
 
 pub fn sync_data(db &sqlite.DB, d SyncData) SyncDataReturn {
     latest_data := get_latest_data(db, d.user_id, d.last_id)
-    mut last_synced_id := 0
+    mut last_synced_id := i64(0)
 
     mut new_user_data := []NewUserData{}
+    /* mut conflicted_data := []string{} */
     if d.uploaded_data.len > 0 {
          data_to_save := d.uploaded_data.map(Data{
             id: it.id
@@ -38,12 +40,20 @@ pub fn sync_data(db &sqlite.DB, d SyncData) SyncDataReturn {
             value: it.value
          })
         last_synced_id = save_data(db, data_to_save)
-        new_user_data =
-            latest_data
-            .filter(fn [d](x NewUserData) bool {
-                return !d.uploaded_data
-                    .any(fn [x](y UploadedData) bool { return y.key == x.key && y.id > x.id })
-            })
+        /* for latest in latest_data { */
+        /*     // if ids match from recently retrieved data from the database then */
+        /*     // put in conflicted data. Otherwise put in `new_user_data` array. */
+        /*     // I should probably return the data in the conflicted data so the */
+        /*     // user can compare the two — if desired. */
+        /*     if !latest.uploaded_data { */
+        /*     } */
+        /*     latest_data */
+        /*     .filter(fn [d](x NewUserData) bool { */
+        /*         return !d.uploaded_data */
+        /*             .any(fn [x](y UploadedData) bool { return y.key == x.key && y.id > x.id }) */
+        /*     }) */
+        /* } */
+        /* new_user_data = */
     }
 
     last_synced_id =
