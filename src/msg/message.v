@@ -1,9 +1,10 @@
 module msg
 
 const (
-    success = SuccessMessage {msg: ''}
+    success = SuccessMessage{msg: ''}
 )
 
+[noinit]
 pub struct Message {
     msg string
 }
@@ -16,22 +17,27 @@ pub fn (err Message) code() int {
     return 0
 }
 
+[noinit]
 pub struct SuccessMessage {
     Message
 }
 
+[noinit]
 pub struct ValidationMessage {
     Message
 }
 
+[noinit]
 pub struct UnauthorizedMessage {
     Message
 }
 
+[noinit]
 pub struct NotFoundMessage {
     Message
 }
 
+[noinit]
 pub struct BadRequestMessage {
     Message
 }

@@ -1,7 +1,7 @@
 module msg
 
 pub fn assert_found(value int, name string) ! {
-    if value == 0 {
+    if value < 1 {
         return not_found('Could not find "${name}".')
     }
 }
