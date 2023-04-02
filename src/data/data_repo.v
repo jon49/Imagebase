@@ -1,23 +1,19 @@
 module data
 
 import db.sqlite
-// import msg { validate, assert_found, has_content }
 
 [table: 'data']
 struct Data {
-    id int          [primary; sql: serial]
-    user_id int     [nonull]
-    key string      [nonull]
+    id int              [primary; sql: serial]
+    user_id int         [nonull]
+    key string          [nonull]
     value string
+    timestamp string    [sql_type: 'DATETIME'; default: 'CURRENT_TIMESTAMP']
 }
 
 fn create_db(db &sqlite.DB) int {
+    sql db { create table Data }
     result := db.exec_none("
-CREATE TABLE IF NOT EXISTS data (
-    id INTEGER NOT NULL PRIMARY KEY,
-    user_id INTEGER NOT NULL,
-    key TEXT NOT NULL,
-    value TEXT NULL );
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fetch ON data (id, user_id, key);
 ")
     return result
@@ -29,8 +25,6 @@ fn save_data(db &sqlite.DB, data []Data) i64 {
             insert d into Data
         }
     }
-    /* max_id := 'SELECT MAX(id) FROM data;' */
-    /* return max_id.int() */
     return db.last_insert_rowid()
 }
 
@@ -44,7 +38,7 @@ WITH Duplicates AS (
     WHERE id > ${last_id}
       AND user_id = ${user_id}
 )
-SELECT d.key, d.value, d.id
+SELECT d.key, d.value, d.id, d.timestamp
 FROM Duplicates d
 WHERE DupNum = 1
 ORDER BY d.id;'
@@ -58,6 +52,7 @@ ORDER BY d.id;'
             key: row.vals[0]
             value: row.vals[1]
             id: row.vals[2].int()
+            timestamp: row.vals[3]
         }
     }
 

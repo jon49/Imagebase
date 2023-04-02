@@ -6,6 +6,7 @@ pub struct SimpleData {
     key string
     id int
     value string
+    timestamp string
 }
 
 pub struct SyncData {

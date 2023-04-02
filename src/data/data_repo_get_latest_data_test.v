@@ -23,6 +23,7 @@ fn test_get_latest_data() {
         id: 3
         key: 'key2'
         value: 'valueC'
+        timestamp: first.timestamp
     }
 
     last := result.last()
@@ -30,6 +31,7 @@ fn test_get_latest_data() {
         id: 4
         key: 'key1'
         value: 'valueD'
+        timestamp: last.timestamp
     }
 
     db.close() or { panic(err) }

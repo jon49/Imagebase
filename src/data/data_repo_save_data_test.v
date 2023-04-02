@@ -29,18 +29,22 @@ fn test_save_data() {
 
     assert saved_data.len == 2
 
-    assert saved_data.first() == Data{
+    first := saved_data.first()
+    assert first == Data{
         id: 1
         user_id: 2
         key: 'key1'
         value: 'valueA'
+        timestamp: first.timestamp
     }
 
-    assert saved_data.last() == Data{
+    last := saved_data.last()
+    assert last == Data{
         id: 2
         user_id: 2
         key: 'key2'
         value: 'valueB'
+        timestamp: last.timestamp
     }
 
     db.close() or { panic(err) }

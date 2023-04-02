@@ -62,11 +62,13 @@ fn test_sync_data_inserts_new_data() {
     }
 
     assert results.len == 5
-    assert results[4] == Data{
+    fifth := results[4]
+    assert fifth == Data{
         id: 5
         key: 'keyNew'
         value: 'Value New'
         user_id: 1
+        timestamp: fifth.timestamp
     }
 
     db.close() or { panic(err) }
@@ -87,18 +89,26 @@ fn test_sync_data_handles_conflicting_data() {
     assert result.last_synced_id == 5
     assert result.new_user_data.len == 1
     assert result.conflicted_data.len == 1
-    assert result.conflicted_data.first() == SimpleData{ id: 4 key: 'key1' value: 'valueD' }
+    first := result.conflicted_data.first()
+    assert first == SimpleData{
+        id: 4
+        key: 'key1'
+        value: 'valueD'
+        timestamp: first.timestamp
+    }
 
     results := sql db {
         select from Data
     }
 
     assert results.len == 5
-    assert results[4] == Data{
+    fifth := results[4]
+    assert fifth == Data{
         id: 5
         key: 'key1'
         value: 'Value New'
         user_id: 1
+        timestamp: fifth.timestamp
     }
 
     db.close() or { panic(err) }
