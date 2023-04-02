@@ -72,10 +72,6 @@ fn test_sync_data_inserts_new_data() {
     db.close() or { panic(err) }
 }
 
-// When get latest data returns the same key as data that is being uploaded that
-// data is conflicted. Last write wins so we will overwrite the previous data
-// and add the conflicted data to a different array and let the user determine
-// which data to keep.
 fn test_sync_data_handles_conflicting_data() {
     mut db := set_up()
     add_data(db)
