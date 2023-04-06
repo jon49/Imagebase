@@ -21,7 +21,14 @@ fn test_save_data() {
 
     result := save_data(&db, data)
 
-    assert result == 2
+    assert result == [
+        Saved{
+            id: 1
+            key: 'key1' },
+        Saved{
+            id: 2
+            key: 'key2'
+        }]
 
     saved_data := sql db {
         select from Data

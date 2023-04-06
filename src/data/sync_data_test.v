@@ -56,6 +56,12 @@ fn test_sync_data_inserts_new_data() {
     // Make that last synced id is also updated.
     assert result.last_synced_id == 5
     assert result.new_user_data.len == 2
+    assert result.saved.len == 1
+
+    assert result.saved == [
+        Saved{
+            id: 5
+            key: 'keyNew' } ]
 
     results := sql db {
         select from Data

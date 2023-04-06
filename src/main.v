@@ -6,7 +6,6 @@ import vweb
 
 struct App {
 	vweb.Context
-    middlewares map[string][]vweb.Middleware
 pub:
     salt string = 'yellow'
 pub mut:

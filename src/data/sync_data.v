@@ -2,7 +2,14 @@ module data
 
 import db.sqlite
 
+pub struct Saved {
+pub:
+    id i64
+    key string
+}
+
 pub struct SimpleData {
+pub:
     key string
     id int
     value string
@@ -16,12 +23,14 @@ pub struct SyncData {
 }
 
 pub struct SyncDataReturn {
+pub:
     new_user_data []SimpleData
     conflicted_data []SimpleData
+    saved []Saved
     last_synced_id i64
 }
 
-pub fn sync_data(db &sqlite.DB, d SyncData) SyncDataReturn {
+pub fn sync_data(db &sqlite.DB, d &SyncData) SyncDataReturn {
     latest_data := get_latest_data(db, d.user_id, d.last_id)
 
     mut new_user_data := []SimpleData{ cap: latest_data.len }
@@ -48,60 +57,26 @@ pub fn sync_data(db &sqlite.DB, d SyncData) SyncDataReturn {
         }
     }
 
-    last_synced_id :=
-        max([
-            save_data(db, map_simple_data_to_data(d.uploaded_data, d.user_id)),
-            max(latest_data.map(i64(it.id)))
-        ])
+    mut uploaded_data := []Data{ cap: d.uploaded_data.len }
+    for uploaded in d.uploaded_data {
+        uploaded_data << Data{
+            user_id: d.user_id
+            key: uploaded.key
+            value: uploaded.value
+        }
+    }
+    saved := save_data(db, uploaded_data)
+
+    mut ids := saved.map(it.id)
+    ids << max(latest_data.map(i64(it.id)))
+    last_synced_id := max(ids)
 
     return SyncDataReturn{
         conflicted_data: conflicted
         last_synced_id: last_synced_id
         new_user_data: new_user_data
+        saved: saved
     }
-
-    /* mut conflicted_data := []string{} */
-    /* if d.uploaded_data.len > 0 { */
-    /*      data_to_save := d.uploaded_data.map(Data{ */
-    /*         id: it.id */
-    /*         key: it.key */
-    /*         user_id: d.user_id */
-    /*         value: it.value */
-    /*      }) */
-    /*     last_synced_id = save_data(db, data_to_save) */
-    /*     /* for latest in latest_data { */ */
-    /*     /*     // if ids match from recently retrieved data from the database then */ */
-    /*     /*     // put in conflicted data. Otherwise put in `new_user_data` array. */ */
-    /*     /*     // I should probably return the data in the conflicted data so the */ */
-    /*     /*     // user can compare the two — if desired. */ */
-    /*     /*     if !latest.uploaded_data { */ */
-    /*     /*     } */ */
-    /*     /*     latest_data */ */
-    /*     /*     .filter(fn [d](x NewUserData) bool { */ */
-    /*     /*         return !d.uploaded_data */ */
-    /*     /*             .any(fn [x](y UploadedData) bool { return y.key == x.key && y.id > x.id }) */ */
-    /*     /*     }) */ */
-    /*     /* } */ */
-    /*     /* new_user_data = */ */
-    /* } */
-    /**/
-    /* last_synced_id = */
-    /*     if last_synced_id > 0 { */
-    /*         last_synced_id */
-    /*     } else { */
-    /*         max(latest_data.map(it.id)) */
-    /*     } */
-
-}
-
-fn map_simple_data_to_data(simple_data []SimpleData, user_id int) []Data {
-    return simple_data.map(fn [user_id](x SimpleData) Data {
-        return Data{
-            user_id: user_id
-            key: x.key
-            value: x.value
-        }
-    })
 }
 
 fn max(xs []i64) i64 {

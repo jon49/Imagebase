@@ -19,13 +19,26 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_fetch ON data (id, user_id, key);
     return result
 }
 
-fn save_data(db &sqlite.DB, data []Data) i64 {
+/* Change to this when v sqlite has exec option for params */
+/* INSERT INTO {D.Table} */
+/*        ({D.Key}, {D.Source}, {D.UserId}, {D.Value}) */
+/* VALUES ({D._Key}, {D._Source}, {D._UserId}, {D._Value}) */
+/* RETURNING {D.Id}, {D.Key};" */
+
+fn save_data(db &sqlite.DB, data []Data) []Saved {
+    mut saved := []Saved{ cap: data.len }
     for d in data {
         sql db {
             insert d into Data
         }
+        last_id := db.last_insert_rowid()
+        saved << &Saved{
+            key: d.key
+            id: last_id
+        }
     }
-    return db.last_insert_rowid()
+
+    return saved
 }
 
 fn get_latest_data(db &sqlite.DB, user_id int, last_id int) []SimpleData {
@@ -42,7 +55,7 @@ SELECT d.key, d.value, d.id, d.timestamp
 FROM Duplicates d
 WHERE DupNum = 1
 ORDER BY d.id;'
-    
+
     rows, _ := db.exec(get_data_query)
 
     mut data := []SimpleData{ len: rows.len }
