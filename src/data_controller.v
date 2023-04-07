@@ -2,10 +2,10 @@ module main
 
 import data
 import db.sqlite
+import msg
 import json
 import validation
 import vweb
-import x.json2
 
 struct SyncDataDto
 {
@@ -48,13 +48,11 @@ fn (mut app App) sync_data() vweb.Result {
         return app.message_response(err)
     }
 
-    json_value := json2.encode[SyncDataReturnDto](result)
-    return app.json(json_value)
+    return app.json(json.encode(result))
 }
 
 fn sync_data(db &sqlite.DB, user_id int, json_data string) !SyncDataReturnDto {
-    /* data_dto := msg.get_data[SyncDataDto](json_data)! */
-    data_dto := json2.decode[SyncDataDto](json_data)!
+    data_dto := msg.get_data[SyncDataDto](json_data)!
     validate_sync_data_dto(&data_dto)!
 
     data_arr := data_dto.data.map(data.SimpleData{
@@ -68,7 +66,7 @@ fn sync_data(db &sqlite.DB, user_id int, json_data string) !SyncDataReturnDto {
         uploaded_data: data_arr
     }
 
-    result := data.sync_data(db, d)
+    result := data.sync_data(db, d)!
 
     return SyncDataReturnDto{
         data: result.new_user_data.map(DataDto{
@@ -80,7 +78,7 @@ fn sync_data(db &sqlite.DB, user_id int, json_data string) !SyncDataReturnDto {
                 id: it.id })
         conflicted: result.conflicted_data.map(ConflictedDto{
                 key: it.key
-                data: if it.value.len > 0 { it.value } else { none }
+                data: option(it.value)
                 id: it.id
                 timestamp: it.timestamp })
         last_synced_id: result.last_synced_id

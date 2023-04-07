@@ -33,19 +33,13 @@ fn main() {
 
 fn (mut app App) set_up_databases() ! {
 	mut db := sqlite.connect('notes.db')!
-	sql db {
-		create table Note
-	}
+	sql db { create table Note } or { panic(err) }
 
     mut session_db := sqlite.connect('sessions.db')!
-    sql session_db {
-        create table Session
-    }
+    sql session_db { create table Session } or { panic(err) }
 
     mut user_db := sqlite.connect('users.db')!
-    sql user_db {
-        create table User
-    }
+    sql user_db { create table User } or { panic(err) }
 
     app.db = db
     app.session_db = session_db
@@ -61,7 +55,7 @@ pub fn (mut app App) before_request() {
     if session.len > 0 {
         session_record := sql app.session_db {
             select from Session where session == session limit 1
-        }
+        } or { panic(err) }
         if session.len > 0 {
             app.user_id = session_record[0].user_id
             app.session = session

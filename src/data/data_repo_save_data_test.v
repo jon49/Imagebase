@@ -4,7 +4,7 @@ import db.sqlite
 
 fn test_save_data() {
     mut db := sqlite.connect(":memory:") or { panic(err) }
-    create_db(db)
+    create_db(db) or { panic(err) }
 
     data := [
         Data{
@@ -19,7 +19,7 @@ fn test_save_data() {
         }
     ]
 
-    result := save_data(&db, data)
+    result := save_data(&db, data) or { panic(err) }
 
     assert result == [
         Saved{

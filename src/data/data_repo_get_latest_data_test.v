@@ -4,7 +4,7 @@ import db.sqlite
 
 fn test_get_latest_data() {
     mut db := sqlite.connect(":memory:") or { panic(err) }
-    create_result := create_db(&db)
+    create_result := create_db(&db) or { panic(err) }
     assert create_result == 101 // Successful
 
     data := [
@@ -13,7 +13,7 @@ fn test_get_latest_data() {
         Data{ user_id: 1, key: 'key2', value: 'valueC' }, // New data
         Data{ user_id: 1, key: 'key1', value: 'valueD' }, // Overwritten Data
     ]
-    save_data(db, data)
+    save_data(db, data) or { panic(err) }
 
     result := get_latest_data(db, 1, 0)
     assert result.len == 2

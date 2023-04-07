@@ -11,7 +11,7 @@ struct Session {
     created_date time.Time
 }
 
-fn (mut app App) create_session(user_id int) Session {
+fn (mut app App) create_session(user_id int) !Session {
     uuid := rand.uuid_v4()
     session := Session{
         user_id: user_id
@@ -19,9 +19,7 @@ fn (mut app App) create_session(user_id int) Session {
         created_date: time.now()
     }
 
-    sql app.session_db {
-        insert session into Session
-    }
+    sql app.session_db { insert session into Session }!
 
     return session
 }
@@ -40,7 +38,7 @@ fn (mut app App) register(email string, password string) !string {
         return error('Oops, something happened that shouldn\'t have. Could not create user!')
     }
 
-    session := app.create_session(user_id)
+    session := app.create_session(user_id)!
     return session.session
 }
 

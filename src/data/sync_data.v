@@ -30,7 +30,7 @@ pub:
     last_synced_id i64
 }
 
-pub fn sync_data(db &sqlite.DB, d &SyncData) SyncDataReturn {
+pub fn sync_data(db &sqlite.DB, d &SyncData) !SyncDataReturn {
     latest_data := get_latest_data(db, d.user_id, d.last_id)
 
     mut new_user_data := []SimpleData{ cap: latest_data.len }
@@ -65,7 +65,7 @@ pub fn sync_data(db &sqlite.DB, d &SyncData) SyncDataReturn {
             value: uploaded.value
         }
     }
-    saved := save_data(db, uploaded_data)
+    saved := save_data(db, uploaded_data)!
 
     mut ids := saved.map(it.id)
     ids << max(latest_data.map(i64(it.id)))

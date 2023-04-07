@@ -6,7 +6,9 @@ import db.sqlite
 // https://github.com/vlang/v/blob/master/vlib/db/sqlite/sqlite_test.v
 
 fn test_sync_data_no_new_data_returns_latest_data() {
-    mut db := set_up()
+    mut db := set_up() or {
+        panic(err)
+    }
     add_data(db)
 
     sync := SyncData{
@@ -27,7 +29,9 @@ fn test_sync_data_no_new_data_returns_latest_data() {
 }
 
 fn test_sync_data_returns_last_synced_record_id() {
-    mut db := set_up()
+    mut db := set_up() or {
+        panic(err)
+    }
     add_data(db)
 
     sync := SyncData{
@@ -43,7 +47,7 @@ fn test_sync_data_returns_last_synced_record_id() {
 }
 
 fn test_sync_data_inserts_new_data() {
-    mut db := set_up()
+    mut db := set_up() or { panic(err) }
     add_data(db)
 
     sync := SyncData{
@@ -81,7 +85,7 @@ fn test_sync_data_inserts_new_data() {
 }
 
 fn test_sync_data_handles_conflicting_data() {
-    mut db := set_up()
+    mut db := set_up() or { panic(err) }
     add_data(db)
 
     sync := SyncData{
@@ -120,9 +124,9 @@ fn test_sync_data_handles_conflicting_data() {
     db.close() or { panic(err) }
 }
 
-fn set_up() &sqlite.DB {
+fn set_up() !&sqlite.DB {
     mut db := sqlite.connect(":memory:") or { panic(err) }
-    create_db(db)
+    create_db(db)!
     return &db
 }
 
@@ -133,6 +137,6 @@ fn add_data(db &sqlite.DB) {
         Data{ user_id: 1, key: 'key2', value: 'valueC' },
         Data{ user_id: 1, key: 'key1', value: 'valueD' }
     ]
-    save_data(db, data)
+    save_data(db, data) or { panic(err) }
 }
 
