@@ -1,4 +1,6 @@
-module msg
+module validation
+
+import msg
 
 fn test_validate_success() {
     validate(true, 'It worked!') or {
@@ -9,7 +11,7 @@ fn test_validate_success() {
 fn test_validate_fail() {
     validate(false, 'It failed — just like it should have!') or {
         match err {
-            ValidationMessage {
+            msg.ValidationMessage {
                 assert err.msg() == 'It failed — just like it should have!'
                 return
             }

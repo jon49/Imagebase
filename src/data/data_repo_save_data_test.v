@@ -32,7 +32,7 @@ fn test_save_data() {
 
     saved_data := sql db {
         select from Data
-    }
+    } or { panic(err) }
 
     assert saved_data.len == 2
 

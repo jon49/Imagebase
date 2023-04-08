@@ -16,7 +16,7 @@ fn test_sync_data_no_new_data_returns_latest_data() {
         last_id: 0
         uploaded_data: []SimpleData{}
     }
-    result := sync_data(db, sync)
+    result := sync_data(db, sync) or { panic(err) }
 
     assert result.new_user_data.len == 2
     assert result.conflicted_data.len == 0
@@ -39,7 +39,7 @@ fn test_sync_data_returns_last_synced_record_id() {
         last_id: 0
         uploaded_data: []SimpleData{}
     }
-    result := sync_data(db, sync)
+    result := sync_data(db, sync) or { panic(err) }
 
     assert result.last_synced_id == 4
 
@@ -55,7 +55,7 @@ fn test_sync_data_inserts_new_data() {
         last_id: 0
         uploaded_data: [ SimpleData{ key: 'keyNew' value: 'Value New' } ]
     }
-    result := sync_data(db, sync)
+    result := sync_data(db, sync) or { panic(err) }
 
     // Make that last synced id is also updated.
     assert result.last_synced_id == 5
@@ -69,7 +69,7 @@ fn test_sync_data_inserts_new_data() {
 
     results := sql db {
         select from Data
-    }
+    } or { panic(err) }
 
     assert results.len == 5
     fifth := results[4]
@@ -93,7 +93,7 @@ fn test_sync_data_handles_conflicting_data() {
         last_id: 0
         uploaded_data: [ SimpleData{ key: 'key1' value: 'Value New' } ]
     }
-    result := sync_data(db, sync)
+    result := sync_data(db, sync) or { panic(err) }
 
     // Make that last synced id is also updated.
     assert result.last_synced_id == 5
@@ -109,7 +109,7 @@ fn test_sync_data_handles_conflicting_data() {
 
     results := sql db {
         select from Data
-    }
+    } or { panic(err) }
 
     assert results.len == 5
     fifth := results[4]

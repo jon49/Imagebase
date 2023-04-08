@@ -1,9 +1,11 @@
-module msg
+module validation
+
+import msg
 
 fn test_has_content_success() {
     has_content(0) or {
         match err {
-            SuccessMessage {
+            msg.SuccessMessage {
                 assert err.msg() == ''
                 return
             }

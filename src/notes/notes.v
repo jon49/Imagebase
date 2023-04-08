@@ -1,7 +1,8 @@
 module notes
 
 import db.sqlite
-import msg { validate, assert_found, has_content }
+import msg
+import validation { validate, assert_found, has_content }
 
 const (
 	unique_message = 'Please provide a unique message for Note'
