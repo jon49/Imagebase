@@ -1,4 +1,6 @@
-module msg
+module utils
+
+import msg
 
 struct Test {
     age int
@@ -6,7 +8,7 @@ struct Test {
 }
 
 fn test_get_data_success() {
-    val := get_data[Test]('{"age":25,"name":"George"}') or {
+    val := parse_json[Test]('{"age":25,"name":"George"}') or {
         assert false
         return
     }
@@ -15,9 +17,9 @@ fn test_get_data_success() {
 }
 
 fn test_get_data_fail() {
-    val := get_data[Test]('{"age":25"name":"George"}') or {
+    val := parse_json[Test]('{"age":25"name":"George"}') or {
         match err {
-            BadRequestMessage {
+            msg.BadRequestMessage {
                 assert err.msg() == 'Invalid JSON Payload'
             }
             else {
@@ -28,4 +30,5 @@ fn test_get_data_fail() {
     }
     assert false, 'JSON parsing should have failed.'
 }
+
 

@@ -2,6 +2,7 @@ module notes
 
 import db.sqlite
 import msg
+import utils { parse_json }
 import validation { validate, assert_found, has_content }
 
 const (
@@ -18,7 +19,7 @@ pub:
 }
 
 pub fn create(mut db &sqlite.DB, data string) !Note {
-    note := msg.get_data[Note](data)!
+    note := parse_json[Note](data)!
 
 	// before we save, we must ensure the note's message is unique
 	notes_found := sql db {
@@ -61,7 +62,7 @@ pub fn get_all(db &sqlite.DB) ![]Note {
 }
 
 pub fn update(mut db &sqlite.DB, id int, data string) !Note {
-    n := msg.get_data[Note](data)!
+    n := parse_json[Note](data)!
 
 	note_to_update := sql db {
 		select from Note

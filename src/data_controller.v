@@ -2,8 +2,8 @@ module main
 
 import data
 import db.sqlite
-import msg
 import json
+import utils { parse_json }
 import validation
 import vweb
 
@@ -52,7 +52,7 @@ fn (mut app App) sync_data() vweb.Result {
 }
 
 fn sync_data(db &sqlite.DB, user_id int, json_data string) !SyncDataReturnDto {
-    data_dto := msg.get_data[SyncDataDto](json_data)!
+    data_dto := parse_json[SyncDataDto](json_data)!
     validate_sync_data_dto(&data_dto)!
 
     data_arr := data_dto.data.map(data.SimpleData{

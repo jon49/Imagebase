@@ -2,6 +2,7 @@ module main
 
 import db.sqlite
 import notes { Note }
+import os
 import vweb
 
 struct App {
@@ -18,6 +19,8 @@ pub mut:
 
 fn main() {
 	http_port := 8000
+
+    println(os.args)
 
 	mut app := &App{}
     /*     middlewares: { */

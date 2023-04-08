@@ -1,8 +1,9 @@
-module msg
+module utils
 
 import json
+import msg
 
-pub fn get_data[T](data string) !T {
+pub fn parse_json[T](data string) !T {
 	value := json.decode(T, data) or {
         return msg.bad_request('Invalid JSON Payload')
     }
