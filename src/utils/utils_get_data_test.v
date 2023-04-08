@@ -31,4 +31,3 @@ fn test_get_data_fail() {
     assert false, 'JSON parsing should have failed.'
 }
 
-
