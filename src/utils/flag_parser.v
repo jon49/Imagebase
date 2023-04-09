@@ -6,8 +6,9 @@ import os
 
 pub struct Config {
 pub:
-    app_path string [json: appPath]
+    app_path string          [json: appPath]
     port int = 8000
+    static_files_path string [json: staticFiles]
 }
 
 pub fn get_config(args []string) !&Config {

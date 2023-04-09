@@ -9,7 +9,7 @@ const (
 
 fn testsuite_begin() {
     mut f := os.create(file_name)!
-    f.write_string('{"appPath":"${file_name}","port":8888}')!
+    f.write_string('{"appPath":"${file_name}","port":8888,"staticFiles":"my-static-files"}')!
     f.close()
     mut empty := os.create(empty_file)!
     f.close()
@@ -28,6 +28,7 @@ fn test_get_config_with_file() {
     assert result == Config{
         app_path: file_name
         port: 8888
+        static_files_path: 'my-static-files'
     }
 }
 
