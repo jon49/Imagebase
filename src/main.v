@@ -1,8 +1,10 @@
 module main
 
+import data
 import db.sqlite
 import notes { Note }
 import os
+import utils { get_config }
 import vweb
 
 struct App {
@@ -13,14 +15,13 @@ pub mut:
 	db sqlite.DB
     session_db sqlite.DB
     user_db sqlite.DB
+    data_db sqlite.DB
     user_id int
     session string
 }
 
 fn main() {
-	http_port := 8000
-
-    println(os.args)
+    config := get_config(os.args)!
 
 	mut app := &App{}
     /*     middlewares: { */
@@ -29,24 +30,38 @@ fn main() {
     /*     } */
     /* } */
 
-    app.set_up_databases()!
+    app.set_up_databases(config.app_path)!
 
-	vweb.run(app, http_port)
+	vweb.run(app, config.port)
 }
 
-fn (mut app App) set_up_databases() ! {
-	mut db := sqlite.connect('notes.db')!
-	sql db { create table Note } or { panic(err) }
+fn get_db_path(app_path string, db_name string) string {
+    return if app_path.len > 0 {
+        os.join_path(app_path, db_name)
+    } else { ':memory:' }
+}
 
-    mut session_db := sqlite.connect('sessions.db')!
+fn (mut app App) set_up_databases(app_path string) ! {
+    notes_path := get_db_path(app_path, 'notes.db')
+	mut notes_db := sqlite.connect(notes_path)!
+	sql notes_db { create table Note } or { panic(err) }
+
+    sessions_path := get_db_path(app_path, 'sessions.db')
+    mut session_db := sqlite.connect(sessions_path)!
     sql session_db { create table Session } or { panic(err) }
 
-    mut user_db := sqlite.connect('users.db')!
+    users_path := get_db_path(app_path, 'users.db')
+    mut user_db := sqlite.connect(users_path)!
     sql user_db { create table User } or { panic(err) }
 
-    app.db = db
+    data_path := get_db_path(app_path, 'data.db')
+    mut data_db := sqlite.connect(data_path)!
+    data.create_db(&data_db)!
+
+    app.db = notes_db
     app.session_db = session_db
     app.user_db = user_db
+    app.data_db = data_db
 }
 
 pub fn (mut app App) before_request() {

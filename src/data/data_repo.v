@@ -11,7 +11,7 @@ struct Data {
     timestamp string    [sql_type: 'DATETIME'; default: 'CURRENT_TIMESTAMP']
 }
 
-fn create_db(db &sqlite.DB) !int {
+pub fn create_db(db &sqlite.DB) !int {
     sql db { create table Data }!
     result := db.exec_none("
 CREATE UNIQUE INDEX IF NOT EXISTS idx_fetch ON data (id, user_id, key);

@@ -92,18 +92,6 @@ fn option(value string) ?string {
     return value
 }
 
-/* fn map_sync_data_dto_to_sync_data(data &SyncDataDto, user_id int) &data.SyncData { */
-/*     return &data.SyncData{ */
-/*         user_id: user_id */
-/*         last_id: data.last_synced_id */
-/*         data: data.data.map(&data.SimpleData{ */
-/*             key: it.key */
-/*             value: it.data */
-/*             id: it.id */
-/*         }) */
-/*     } */
-/* } */
-
 fn validate_sync_data_dto(sync_data &SyncDataDto) ! {
     mut v := validation.start()
     v.validate(
