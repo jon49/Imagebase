@@ -4,6 +4,7 @@ import data
 import db.sqlite
 import notes { Note }
 import os
+import time
 import utils { get_config }
 import vweb
 
@@ -18,10 +19,13 @@ pub mut:
     data_db sqlite.DB
     user_id int
     session string
+    kill_key string
 }
 
 fn main() {
+    println('HELLO!')
     config := get_config(os.args)!
+    println(':::::${config}:::::')
 
 	mut app := &App{}
     /*     middlewares: { */
@@ -35,13 +39,35 @@ fn main() {
 	vweb.run(app, config.port)
 }
 
+['/shutdown'; post]
+fn (mut app App) shutdown() vweb.Result {
+    key := app.query['key']
+    if key != app.kill_key {
+		return app.text('KEY::::${key}:::::::<><><>::::KILL KEY:::::${app.kill_key}')
+    }
+	spawn app.gracefull_exit()
+	return app.ok('good bye')
+}
+
+fn (mut app App) gracefull_exit() {
+	eprintln('>> webserver: gracefull_exit')
+	time.sleep(100 * time.millisecond)
+	exit(0)
+}
+
 fn get_db_path(app_path string, db_name string) string {
-    return if app_path.len > 0 {
-        os.join_path(app_path, db_name)
-    } else { ':memory:' }
+    return if app_path.len > 0 { db_name } else { ':memory:' }
 }
 
 fn (mut app App) set_up_databases(app_path string) ! {
+    pwd := os.getwd()
+    if app_path.len > 0 {
+        if !os.exists(app_path) {
+            os.mkdir(app_path)!
+        }
+        os.chdir(app_path)!
+    }
+
     notes_path := get_db_path(app_path, 'notes.db')
 	mut notes_db := sqlite.connect(notes_path)!
 	sql notes_db { create table Note } or { panic(err) }
@@ -62,6 +88,10 @@ fn (mut app App) set_up_databases(app_path string) ! {
     app.session_db = session_db
     app.user_db = user_db
     app.data_db = data_db
+
+    if app_path.len > 0 {
+        os.chdir(pwd)!
+    }
 }
 
 pub fn (mut app App) before_request() {
