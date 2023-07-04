@@ -10,6 +10,7 @@ const (
     config_filename = os.join_path(test_path, 'config.json')
     app_path = os.join_path(test_path, 'my-app')
     static_files = os.join_path(app_path, 'static')
+    static_file = os.join_path(static_files, 'index.html')
     sport = 12382
     local_url = 'http://localhost:${sport}'
     serverexe = os.join_path(os.cache_dir(), 'SimpleServer.exe')
@@ -29,6 +30,11 @@ fn testsuite_begin() {
 }')!
     f.close()
 
+    os.mkdir(static_files) or {}
+    f = os.create(static_file)!
+    f.write_string('hello world')!
+    f.close()
+
     if os.exists(serverexe) {
         os.rm(serverexe) or {}
     }
@@ -45,6 +51,7 @@ fn test_created_executable() {
 
 fn test_starts_server() {
     command := '${os.quoted_path(serverexe)} --config ${os.quoted_path(config_filename)} > /dev/null &'
+    println(command)
     res := os.system(command)
     assert res == 0
     time.sleep(100 * time.millisecond)
@@ -56,9 +63,14 @@ fn test_databases_created() {
     assert os.exists(os.join_path(app_path, 'users.db'))
 }
 
-fn test_fail() {
-    assert 4 == 5
-}
+// fn test_can_get_static_file() {
+//     x := http.fetch(url: '${local_url}/static/index.html') or {
+//         assert err.msg() == ''
+//         return
+//     }
+//     assert x.status() == .ok
+//     assert x.body == 'hello world'
+// }
 
 // test static file
 // add data → Make sure I'm not allowed to.

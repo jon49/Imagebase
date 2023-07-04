@@ -14,20 +14,20 @@ pub:
     salt string = 'yellow'
 pub mut:
 	db sqlite.DB
-    session_db sqlite.DB
-    user_db sqlite.DB
-    data_db sqlite.DB
+    session_db sqlite.DB [vweb_global]
+    user_db sqlite.DB [vweb_global]
+    data_db sqlite.DB [vweb_global]
     user_id int
     session string
-    kill_key string
+    kill_key string [vweb_global]
 }
 
 fn main() {
-    println('HELLO!')
     config := get_config(os.args)!
-    println(':::::${config}:::::')
 
-	mut app := &App{}
+	mut app := &App{
+        kill_key: config.kill_key,
+    }
     /*     middlewares: { */
     /*         '/api/': [authentication_middleware] */
     /*         '/notes/': [authentication_middleware] */
@@ -35,6 +35,12 @@ fn main() {
     /* } */
 
     app.set_up_databases(config.app_path)!
+    // if config.app_path.len > 0 {
+    //     os.chdir(config.app_path)!
+    // }
+    if config.static_files_path.len > 0 {
+        app.handle_static(config.static_files_path, true)
+    }
 
 	vweb.run(app, config.port)
 }
@@ -42,8 +48,11 @@ fn main() {
 ['/shutdown'; post]
 fn (mut app App) shutdown() vweb.Result {
     key := app.query['key']
+    if app.kill_key.len == 0 {
+        return app.text('Cannot kill me!')
+    }
     if key != app.kill_key {
-		return app.text('KEY::::${key}:::::::<><><>::::KILL KEY:::::${app.kill_key}')
+		return app.text('Wrong key!')
     }
 	spawn app.gracefull_exit()
 	return app.ok('good bye')
