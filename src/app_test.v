@@ -63,16 +63,15 @@ fn test_databases_created() {
     assert os.exists(os.join_path(app_path, 'users.db'))
 }
 
-// fn test_can_get_static_file() {
-//     x := http.fetch(url: '${local_url}/static/index.html') or {
-//         assert err.msg() == ''
-//         return
-//     }
-//     assert x.status() == .ok
-//     assert x.body == 'hello world'
-// }
+fn test_can_get_static_file() {
+    x := http.fetch(url: '${local_url}/index.html') or {
+        assert err.msg() == ''
+        return
+    }
+    assert x.status() == .ok
+    assert x.body == 'hello world'
+}
 
-// test static file
 // add data → Make sure I'm not allowed to.
 // register
 // login
