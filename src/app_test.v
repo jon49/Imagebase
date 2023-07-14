@@ -104,19 +104,43 @@ fn test_should_be_able_to_register_new_user() {
             'password': 'password'
         }
     )!
-    eprintln(response)
+    assert response.status() == .ok
     cookie := response.header.get(.set_cookie)!
     session := cookie.split(';')[0].split('=')[1]
     assert session.len > 0
-
-    mut f := os.create(temp_filename)!
-    f.write_string(session)!
-    f.close()
 }
 
-// login
+fn test_should_be_able_to_login() {
+    fail_password := http.post_form(
+        '${local_url}/api/login', {
+            'email': 'test@test.com',
+            'password': 'a'
+        }
+    )!
+    assert fail_password.status() == .bad_request
+
+    fail_email := http.post_form(
+        '${local_url}/api/login', {
+            'email': 'test1@test.com',
+            'password': 'password'
+        }
+    )!
+    assert fail_email.status() == .bad_request
+
+    response := http.post_form(
+        '${local_url}/api/login', {
+            'email': 'test@test.com',
+            'password': 'password'
+        }
+    )!
+    assert response.status() == .ok
+    cookie := response.header.get(.set_cookie)!
+    session := cookie.split(';')[0].split('=')[1]
+    eprintln('session: ${session}')
+    assert session.len > 0
+}
+
 // add data
-// stop server
 
 fn test_shutdown() {
 	x := http.fetch(

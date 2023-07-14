@@ -2,6 +2,7 @@ module main
 
 import crypto.sha256
 import time
+import msg
 
 [table: 'users']
 struct User {
@@ -49,6 +50,6 @@ fn (mut app App) get_user_id(email string, password string) !int {
     if result.len > 0 {
         return result[0].id
     }
-    return 0
+    return msg.bad_request('Email or password is incorrect. Please try again!')
 }
 

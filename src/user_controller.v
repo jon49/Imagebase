@@ -33,13 +33,28 @@ fn (mut app App) login_post() vweb.Result {
     }
 
     session := app.login(user.email, user.password) or {
-        error_message := 'Email or password is incorrect.'
-        return app.redirect('/login?error=${error_message}')
+        return app.redirect('/login?error=${err.msg()}')
     }
 
     app.set_session(session.session)
 
     return app.redirect('/web')
+}
+
+['/api/login'; post]
+fn (mut app App) api_login_post() vweb.Result {
+    user := UserDto{
+        email: app.form['email']
+        password: app.form['password']
+    }
+
+    session := app.login(user.email, user.password) or {
+        return app.message_response(err)
+    }
+
+    app.set_session(session.session)
+
+    return app.json('{"success":true}')
 }
 
 ['/register'; get]
