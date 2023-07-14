@@ -15,7 +15,7 @@ struct SyncDataDto
 
 pub struct DataDto {
 pub:
-    key string
+    key string [raw]
     data ?string [raw]
     id int
 }
@@ -42,8 +42,10 @@ pub:
     last_synced_id i64 [json: lastSyncedId]
 }
 
+[middleware: check_auth]
 ['/api/data'; post]
 fn (mut app App) sync_data() vweb.Result {
+    eprintln(app.req.data)
     result := sync_data(&app.db, app.user_id, app.req.data) or {
         return app.message_response(err)
     }

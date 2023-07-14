@@ -3,6 +3,7 @@
 import net.http
 import os
 import time
+// import json
 
 const (
     vexe = @VEXE
@@ -19,6 +20,13 @@ const (
     kill_key = 'killme'
 )
 
+pub struct DataDto {
+pub:
+    key string
+    data ?string
+    id int
+}
+
 fn testsuite_begin() {
     os.mkdir(test_path) or {}
     mut f := os.create(config_filename)!
@@ -31,9 +39,9 @@ fn testsuite_begin() {
     f.close()
 
     os.mkdir(static_files) or {}
-    f = os.create(static_file)!
-    f.write_string('hello world')!
-    f.close()
+    mut f2 := os.create(static_file)!
+    f2.write_string('hello world')!
+    f2.close()
 
     if os.exists(serverexe) {
         os.rm(serverexe) or {}
@@ -72,7 +80,18 @@ fn test_can_get_static_file() {
     assert x.body == 'hello world'
 }
 
-// add data → Make sure I'm not allowed to.
+fn test_should_fail_when_not_logged_in_and_adding_data() {
+    mut response := http.post_json(
+        '${local_url}/api/data',
+        '{}'
+    ) or {
+        assert err.msg() == ''
+        return
+    }
+    assert response.body == 'Unauthorized'
+    assert response.status() == .unauthorized
+}
+
 // register
 // login
 // add data

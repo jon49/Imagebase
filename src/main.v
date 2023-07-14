@@ -26,18 +26,11 @@ fn main() {
     config := get_config(os.args)!
 
 	mut app := &App{
-        kill_key: config.kill_key,
+        kill_key: config.kill_key
     }
-    /*     middlewares: { */
-    /*         '/api/': [authentication_middleware] */
-    /*         '/notes/': [authentication_middleware] */
-    /*     } */
-    /* } */
 
     app.set_up_databases(config.app_path)!
-    // if config.app_path.len > 0 {
-    //     os.chdir(config.app_path)!
-    // }
+
     if config.static_files_path.len > 0 {
         app.handle_static(config.static_files_path, true)
     }
@@ -104,20 +97,6 @@ fn (mut app App) set_up_databases(app_path string) ! {
 }
 
 pub fn (mut app App) before_request() {
-    if !(app.req.url.starts_with('/api')
-        || app.req.url.starts_with('notes')) {
-        return
-    }
-    session := app.get_cookie('session') or { '' }
-    if session.len > 0 {
-        session_record := sql app.session_db {
-            select from Session where session == session limit 1
-        } or { panic(err) }
-        if session.len > 0 {
-            app.user_id = session_record[0].user_id
-            app.session = session
-        }
-    }
     /* if app.user_id < 1 { */
     /*     app.redirect('/login') */
     /* } */
