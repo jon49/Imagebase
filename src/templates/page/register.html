@@ -24,6 +24,12 @@
                     <br>
                     <button>OK</button>
                 </form>`
+            (function() {
+                let url = new URL(location.href)
+                if (url.searchParams.has('success')) {
+                    location.href = '/web'
+                }
+            })()
         </script>
     </body>
 </html>

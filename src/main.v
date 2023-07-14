@@ -25,7 +25,7 @@ pub mut:
 fn main() {
     config := get_config(os.args)!
 
-	mut app := &App{
+	mut app := &App {
         kill_key: config.kill_key
     }
 
@@ -52,7 +52,6 @@ fn (mut app App) shutdown() vweb.Result {
 }
 
 fn (mut app App) gracefull_exit() {
-	eprintln('>> webserver: gracefull_exit')
 	time.sleep(100 * time.millisecond)
 	exit(0)
 }
@@ -94,11 +93,5 @@ fn (mut app App) set_up_databases(app_path string) ! {
     if app_path.len > 0 {
         os.chdir(pwd)!
     }
-}
-
-pub fn (mut app App) before_request() {
-    /* if app.user_id < 1 { */
-    /*     app.redirect('/login') */
-    /* } */
 }
 

@@ -3,12 +3,12 @@
 import net.http
 import os
 import time
-// import json
 
 const (
     vexe = @VEXE
     test_path = os.join_path(os.temp_dir(), 'simple-server-test')
     config_filename = os.join_path(test_path, 'config.json')
+    temp_filename = os.join_path(test_path, 'temp.txt')
     app_path = os.join_path(test_path, 'my-app')
     static_files = os.join_path(app_path, 'static')
     static_file = os.join_path(static_files, 'index.html')
@@ -19,6 +19,11 @@ const (
     cmd_suffix = '> /dev/null &'
     kill_key = 'killme'
 )
+
+struct Test {
+mut:
+    session string
+}
 
 pub struct DataDto {
 pub:
@@ -38,7 +43,7 @@ fn testsuite_begin() {
 }')!
     f.close()
 
-    os.mkdir(static_files) or {}
+    os.mkdir_all(static_files)!
     mut f2 := os.create(static_file)!
     f2.write_string('hello world')!
     f2.close()
@@ -59,7 +64,6 @@ fn test_created_executable() {
 
 fn test_starts_server() {
     command := '${os.quoted_path(serverexe)} --config ${os.quoted_path(config_filename)} > /dev/null &'
-    println(command)
     res := os.system(command)
     assert res == 0
     time.sleep(100 * time.millisecond)
@@ -81,7 +85,7 @@ fn test_can_get_static_file() {
 }
 
 fn test_should_fail_when_not_logged_in_and_adding_data() {
-    mut response := http.post_json(
+    response := http.post_json(
         '${local_url}/api/data',
         '{}'
     ) or {
@@ -92,7 +96,24 @@ fn test_should_fail_when_not_logged_in_and_adding_data() {
     assert response.status() == .unauthorized
 }
 
-// register
+
+fn test_should_be_able_to_register_new_user() {
+    response := http.post_form(
+        '${local_url}/api/register', {
+            'email': 'test@test.com',
+            'password': 'password'
+        }
+    )!
+    eprintln(response)
+    cookie := response.header.get(.set_cookie)!
+    session := cookie.split(';')[0].split('=')[1]
+    assert session.len > 0
+
+    mut f := os.create(temp_filename)!
+    f.write_string(session)!
+    f.close()
+}
+
 // login
 // add data
 // stop server
@@ -107,5 +128,6 @@ fn test_shutdown() {
 	}
 	assert x.status() == .ok
 	assert x.body == 'good bye'
+    os.rmdir_all(test_path)!
 }
 

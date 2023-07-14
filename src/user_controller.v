@@ -51,16 +51,32 @@ fn (mut app App) page_register() vweb.Result {
 ['/register'; post]
 fn (mut app App) register_post() vweb.Result {
     user := User{
-        email: app.form['user']
+        email: app.form['email']
         password: app.form['password']
     }
 
     session := app.register(user.email, user.password) or {
-        return app.redirect('/register?error=User not found.')
+        return app.redirect('/register?error=User%20not%20found.')
     }
 
     app.set_session(session)
 
-    return app.redirect('/web')
+    return app.redirect('/register?success=true')
+}
+
+['/api/register'; post]
+fn (mut app App) api_register() vweb.Result {
+    user := User{
+        email: app.form['email']
+        password: app.form['password']
+    }
+
+    session := app.register(user.email, user.password) or {
+        return app.json('{ "error": "Could not create user." }')
+    }
+
+    app.set_session(session)
+
+    return app.json('{"success":true}')
 }
 
