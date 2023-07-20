@@ -21,7 +21,7 @@ pub:
 pub fn create(mut db &sqlite.DB, data string) !Note {
     note := parse_json[Note](data)!
 
-	// before we save, we must ensure the note's message is unique
+	// before we save, we must ensure the note''s message is unique
 	notes_found := sql db {
 		select from Note where message == note.message
 	}!

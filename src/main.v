@@ -2,7 +2,6 @@ module main
 
 import data
 import db.sqlite
-import notes { Note }
 import os
 import time
 import utils { get_config }
@@ -16,7 +15,6 @@ pub mut:
 	db sqlite.DB
     session_db sqlite.DB [vweb_global]
     user_db sqlite.DB [vweb_global]
-    data_db sqlite.DB [vweb_global]
     user_id int
     session string
     kill_key string [vweb_global]
@@ -69,10 +67,6 @@ fn (mut app App) set_up_databases(app_path string) ! {
         os.chdir(app_path)!
     }
 
-    notes_path := get_db_path(app_path, 'notes.db')
-	mut notes_db := sqlite.connect(notes_path)!
-	sql notes_db { create table Note } or { panic(err) }
-
     sessions_path := get_db_path(app_path, 'sessions.db')
     mut session_db := sqlite.connect(sessions_path)!
     sql session_db { create table Session } or { panic(err) }
@@ -85,10 +79,9 @@ fn (mut app App) set_up_databases(app_path string) ! {
     mut data_db := sqlite.connect(data_path)!
     data.create_db(&data_db)!
 
-    app.db = notes_db
+    app.db = data_db
     app.session_db = session_db
     app.user_db = user_db
-    app.data_db = data_db
 
     if app_path.len > 0 {
         os.chdir(pwd)!

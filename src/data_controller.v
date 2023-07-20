@@ -2,7 +2,6 @@ module main
 
 import data
 import db.sqlite
-import json
 import utils { parse_json }
 import validation
 import vweb
@@ -45,12 +44,11 @@ pub:
 [middleware: check_auth]
 ['/api/data'; post]
 fn (mut app App) sync_data() vweb.Result {
-    eprintln(app.req.data)
     result := sync_data(&app.db, app.user_id, app.req.data) or {
         return app.message_response(err)
     }
 
-    return app.json(json.encode(result))
+    return app.json(result)
 }
 
 fn sync_data(db &sqlite.DB, user_id int, json_data string) !SyncDataReturnDto {

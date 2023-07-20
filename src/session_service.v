@@ -2,6 +2,7 @@ module main
 
 import rand
 import time
+import validation
 
 [table: 'sessions']
 struct Session {
@@ -25,6 +26,11 @@ fn (mut app App) create_session(user_id int) !Session {
 }
 
 fn (mut app App) login(email string, password string) !Session {
+    mut v := validation.start()
+    v.validate(email.len > 0, 'Email cannot be empty.')
+    v.validate(password.len > 0, 'Password cannot be empty.')
+    v.result()!
+
     user_id := app.get_user_id(email, password)!
 
     return app.create_session(user_id)

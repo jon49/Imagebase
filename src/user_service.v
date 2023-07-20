@@ -3,6 +3,7 @@ module main
 import crypto.sha256
 import time
 import msg
+import validation
 
 [table: 'users']
 struct User {
@@ -18,6 +19,11 @@ fn hash_password(password string, salt string) string {
 }
 
 fn (mut app App) register_new_user(email string, password string) !int {
+    mut v := validation.start()
+    v.validate(email.len > 0, 'Email is required.')
+    v.validate(password.len > 0, 'Password is required.')
+    v.result()!
+
     hashed_password := hash_password(password, app.salt)
     user := User{
         email: email

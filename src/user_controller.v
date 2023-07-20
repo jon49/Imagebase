@@ -71,7 +71,7 @@ fn (mut app App) register_post() vweb.Result {
     }
 
     session := app.register(user.email, user.password) or {
-        return app.redirect('/register?error=User%20not%20found.')
+        return app.redirect('/register?error=${err.msg()}.')
     }
 
     app.set_session(session)
@@ -87,7 +87,7 @@ fn (mut app App) api_register() vweb.Result {
     }
 
     session := app.register(user.email, user.password) or {
-        return app.json('{ "error": "Could not create user." }')
+        return app.message_response(err)
     }
 
     app.set_session(session)

@@ -17,5 +17,3 @@ pub fn (mut app App) check_auth() bool {
     return false
 }
 
-
-
