@@ -62,7 +62,8 @@ fn (mut app App) set_up_databases(app_path string) ! {
     pwd := os.getwd()
     if app_path.len > 0 {
         if !os.exists(app_path) {
-            os.mkdir(app_path)!
+            println('Creating app directory: ' + app_path)
+            os.mkdir_all(app_path)!
         }
         os.chdir(app_path)!
     }
