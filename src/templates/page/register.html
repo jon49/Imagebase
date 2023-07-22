@@ -11,10 +11,10 @@
         @if error.len == 0
             <p class=error>@error</p>
         @end
-        <div id=register-form></div>
+        <div id=registration-form></div>
         <p>Already a user? <a href="/login">Login here!</a></p>
         <script>
-            document.getElementById('register-form').outerHTML = `
+            document.getElementById('registration-form').outerHTML = `
                 <form method=post>
                     <label for=email>Email:</label>
                     <input id=email type=email name=email>
@@ -24,10 +24,10 @@
                     <br>
                     <button>OK</button>
                 </form>`
-            (function() {
+            ;(function() {
                 let url = new URL(location.href)
                 if (url.searchParams.has('success')) {
-                    location.href = '/web'
+                    location.href = '/web?success=true'
                 }
             })()
         </script>

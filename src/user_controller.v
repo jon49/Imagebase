@@ -38,7 +38,7 @@ fn (mut app App) login_post() vweb.Result {
 
     app.set_session(session.session)
 
-    return app.redirect('/web')
+    return app.redirect('/web/?success=true')
 }
 
 ['/api/login'; post]
@@ -71,12 +71,12 @@ fn (mut app App) register_post() vweb.Result {
     }
 
     session := app.register(user.email, user.password) or {
-        return app.redirect('/register?error=${err.msg()}.')
+        return app.redirect('/register/?error=${err.msg()}.')
     }
 
     app.set_session(session)
 
-    return app.redirect('/register?success=true')
+    return app.redirect('/web/?success=true')
 }
 
 ['/api/register'; post]

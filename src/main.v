@@ -10,14 +10,14 @@ import vweb
 struct App {
 	vweb.Context
 pub:
-    salt string = 'yellow'
+    kill_key string [vweb_global]
+    salt string [vweb_global]
 pub mut:
 	db sqlite.DB
     session_db sqlite.DB [vweb_global]
     user_db sqlite.DB [vweb_global]
     user_id int
     session string
-    kill_key string [vweb_global]
 }
 
 fn main() {
@@ -25,6 +25,7 @@ fn main() {
 
 	mut app := &App {
         kill_key: config.kill_key
+        salt: config.salt
     }
 
     app.set_up_databases(config.app_path)!
