@@ -4,94 +4,89 @@ import time
 import vweb
 
 struct UserDto {
-    email string [required]
-    password string [required]
+	email    string [required]
+	password string [required]
 }
 
 ['/login'; get]
 fn (mut app App) page_login() vweb.Result {
-    error := app.query['error']
-    return $vweb.html()
+	error := app.query['error']
+	return $vweb.html()
 }
 
 fn (mut app App) set_session(session string) {
-    app.set_cookie(
-        name: 'session',
-        value: session,
-        expires: time.utc().add_days(30),
-        secure: true,
-        http_only: true,
-        same_site: .same_site_strict_mode
-    )
+	app.set_cookie(
+		name: 'session'
+		value: session
+		expires: time.utc().add_days(30)
+		secure: true
+		http_only: true
+		same_site: .same_site_strict_mode
+	)
 }
 
 ['/login'; post]
 fn (mut app App) login_post() vweb.Result {
-    user := UserDto{
-        email: app.form['email']
-        password: app.form['password']
-    }
+	user := UserDto{
+		email: app.form['email']
+		password: app.form['password']
+	}
 
-    session := app.login(user.email, user.password) or {
-        return app.redirect('/login?error=${err.msg()}')
-    }
+	session := app.login(user.email, user.password) or {
+		return app.redirect('/login?error=${err.msg()}')
+	}
 
-    app.set_session(session.session)
+	app.set_session(session.session)
 
-    return app.redirect('/web/?success=true')
+	return app.redirect('/web/?success=true')
 }
 
 ['/api/login'; post]
 fn (mut app App) api_login_post() vweb.Result {
-    user := UserDto{
-        email: app.form['email']
-        password: app.form['password']
-    }
+	user := UserDto{
+		email: app.form['email']
+		password: app.form['password']
+	}
 
-    session := app.login(user.email, user.password) or {
-        return app.message_response(err)
-    }
+	session := app.login(user.email, user.password) or { return app.message_response(err) }
 
-    app.set_session(session.session)
+	app.set_session(session.session)
 
-    return app.json('{"success":true}')
+	return app.json('{"success":true}')
 }
 
 ['/register'; get]
 fn (mut app App) page_register() vweb.Result {
-    error := app.query['error']
-    return $vweb.html()
+	error := app.query['error']
+	return $vweb.html()
 }
 
 ['/register'; post]
 fn (mut app App) register_post() vweb.Result {
-    user := User{
-        email: app.form['email']
-        password: app.form['password']
-    }
+	user := User{
+		email: app.form['email']
+		password: app.form['password']
+	}
 
-    session := app.register(user.email, user.password) or {
-        return app.redirect('/register/?error=${err.msg()}.')
-    }
+	session := app.register(user.email, user.password) or {
+		return app.redirect('/register/?error=${err.msg()}.')
+	}
 
-    app.set_session(session)
+	app.set_session(session)
 
-    return app.redirect('/web/?success=true')
+	return app.redirect('/web/?success=true')
 }
 
 ['/api/register'; post]
 fn (mut app App) api_register() vweb.Result {
-    user := User{
-        email: app.form['email']
-        password: app.form['password']
-    }
+	user := User{
+		email: app.form['email']
+		password: app.form['password']
+	}
 
-    session := app.register(user.email, user.password) or {
-        return app.message_response(err)
-    }
+	session := app.register(user.email, user.password) or { return app.message_response(err) }
 
-    app.set_session(session)
+	app.set_session(session)
 
-    return app.json('{"success":true}')
+	return app.json('{"success":true}')
 }
-

@@ -1,64 +1,73 @@
 module msg
 
 const (
-    success = SuccessMessage{msg: ''}
+	success = SuccessMessage{
+		msg: ''
+	}
 )
 
 [noinit]
 pub struct Message {
-    msg string
+	msg string
 }
 
 pub fn (err Message) msg() string {
-    return err.msg
+	return err.msg
 }
 
 pub fn (err Message) code() int {
-    return 0
+	return 0
 }
 
 [noinit]
 pub struct SuccessMessage {
-    Message
+	Message
 }
 
 [noinit]
 pub struct ValidationMessage {
-    Message
+	Message
 }
 
 [noinit]
 pub struct UnauthorizedMessage {
-    Message
+	Message
 }
 
 [noinit]
 pub struct NotFoundMessage {
-    Message
+	Message
 }
 
 [noinit]
 pub struct BadRequestMessage {
-    Message
+	Message
 }
 
 pub fn unauthorized() IError {
-    return &UnauthorizedMessage{ msg: 'You are unauthorized to access this page.' }
+	return &UnauthorizedMessage{
+		msg: 'You are unauthorized to access this page.'
+	}
 }
 
 pub fn not_found(message string) IError {
-    return &NotFoundMessage{ msg: message }
+	return &NotFoundMessage{
+		msg: message
+	}
 }
 
 pub fn validation_error(message string) IError {
-    return &ValidationMessage{ msg: message }
+	return &ValidationMessage{
+		msg: message
+	}
 }
 
 pub fn bad_request(message string) IError {
-    return &BadRequestMessage{ msg: message }
+	return &BadRequestMessage{
+		msg: message
+	}
 }
 
 pub fn success() IError {
-    return &success
+	return &msg.success
 }
-
