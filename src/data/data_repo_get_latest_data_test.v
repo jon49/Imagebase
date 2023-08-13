@@ -15,7 +15,7 @@ fn test_get_latest_data() {
     ]
     save_data(db, data) or { panic(err) }
 
-    result := get_latest_data(db, 1, 0)
+    result := get_latest_data(db, 1, 0)!
     assert result.len == 2
 
     first := result.first()

@@ -41,7 +41,7 @@ fn save_data(db &sqlite.DB, data []Data) ![]Saved {
     return saved
 }
 
-fn get_latest_data(db &sqlite.DB, user_id int, last_id int) []SimpleData {
+fn get_latest_data(db &sqlite.DB, user_id int, last_id int) ![]SimpleData {
     // Once exec_param_many is created I'll be able to use this as a static
     // string instead this dynamic string
     get_data_query := '
@@ -56,7 +56,7 @@ FROM Duplicates d
 WHERE DupNum = 1
 ORDER BY d.id;'
 
-    rows, _ := db.exec(get_data_query)
+    rows := db.exec(get_data_query)!
 
     mut data := []SimpleData{ len: rows.len }
 

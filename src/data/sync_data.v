@@ -31,7 +31,7 @@ pub:
 }
 
 pub fn sync_data(db &sqlite.DB, d &SyncData) !SyncDataReturn {
-    latest_data := get_latest_data(db, d.user_id, d.last_id)
+    latest_data := get_latest_data(db, d.user_id, d.last_id)!
 
     mut new_user_data := []SimpleData{ cap: latest_data.len }
     mut conflicted := []SimpleData{ cap: latest_data.len }
