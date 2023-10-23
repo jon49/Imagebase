@@ -21,11 +21,11 @@ CREATE UNIQUE INDEX IF NOT EXISTS idx_fetch ON data (id, user_id, key);
 	return result
 }
 
-/* Change to this when v sqlite has exec option for params */
-/* "INSERT INTO {D.Table} */
-/* ({D.Key}, {D.Source}, {D.UserId}, {D.Value}) */
-/* VALUES ({D._Key}, {D._Source}, {D._UserId}, {D._Value}) */
-/* RETURNING {D.Id}, {D.Key};" */
+// Change to this when v sqlite has exec option for params
+// "INSERT INTO {D.Table}
+// ({D.Key}, {D.Source}, {D.UserId}, {D.Value})
+// VALUES ({D._Key}, {D._Source}, {D._UserId}, {D._Value})
+// RETURNING {D.Id}, {D.Key};"
 
 fn save_data(db &sqlite.DB, data []Data) ![]Saved {
 	mut saved := []Saved{cap: data.len}
