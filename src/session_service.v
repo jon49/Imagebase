@@ -40,7 +40,7 @@ fn (mut app App) login(email string, password string) !Session {
 
 fn (mut app App) delete_session() ! {
 	mut v := validation.start()
-	v.validate(app.session.len == 0, 'No session available.')
+	v.validate(app.session.len > 0, 'No session available.')
 	v.result()!
 
 	sql app.session_db {

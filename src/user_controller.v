@@ -55,6 +55,7 @@ fn (mut app App) api_login_post() vweb.Result {
 	return app.json('{"success":true}')
 }
 
+[middleware: check_auth]
 ['/api/logout'; post]
 fn (mut app App) api_logout_post() vweb.Result {
 	app.delete_session() or { return app.message_response(err) }
