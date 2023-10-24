@@ -159,6 +159,20 @@ fn login() !string {
 	return session
 }
 
+fn test_should_be_able_to_logout() {
+	session := login()!
+
+	response := http.fetch(http.FetchConfig{
+		url: '${local_url}/api/logout'
+		method: .post
+		cookies: {
+			'session': session
+		}
+	})!
+
+	assert response.status() == .no_content
+}
+
 fn test_should_be_able_to_add_data() {
 	session := login()!
 

@@ -55,6 +55,14 @@ fn (mut app App) api_login_post() vweb.Result {
 	return app.json('{"success":true}')
 }
 
+['/api/logout'; post]
+fn (mut app App) api_logout_post() vweb.Result {
+	app.delete_session() or { return app.message_response(err) }
+
+	app.set_status(204, '')
+	return app.ok('')
+}
+
 ['/register'; get]
 fn (mut app App) page_register() vweb.Result {
 	error := app.query['error']

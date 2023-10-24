@@ -38,6 +38,16 @@ fn (mut app App) login(email string, password string) !Session {
 	return app.create_session(user_id)
 }
 
+fn (mut app App) delete_session() ! {
+	mut v := validation.start()
+	v.validate(app.session.len == 0, 'No session available.')
+	v.result()!
+
+	sql app.session_db {
+		delete from Session where session == app.session
+	}!
+}
+
 fn (mut app App) register(email string, password string) !string {
 	user_id := app.register_new_user(email, password)!
 	if user_id == 0 {
