@@ -171,6 +171,16 @@ fn test_should_be_able_to_logout() {
 	})!
 
 	assert response.status() == .no_content
+
+	response2 := http.fetch(http.FetchConfig{
+		url: '${local_url}/api/data'
+		method: .post
+		cookies: {
+			'session': session
+		}
+	})!
+
+	assert response2.status() == .unauthorized
 }
 
 fn test_should_be_able_to_add_data() {
