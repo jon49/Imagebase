@@ -5,9 +5,9 @@ import db.sqlite
 [table: 'data']
 struct Data {
 	id        int    [primary; sql: serial]
-	user_id   int    [nonull]
-	key       string [nonull]
-	value     string
+	user_id   int
+	key       string
+	value     string [null]
 	timestamp string [default: 'CURRENT_TIMESTAMP'; sql_type: 'DATETIME']
 }
 

@@ -8,9 +8,9 @@ import validation
 [table: 'users']
 struct User {
 	id           int       [primary; sql: serial]
-	email        string    [nonull]
-	password     string    [nonull]
-	created_date time.Time [nonull]
+	email        string
+	password     string
+	created_date time.Time
 }
 
 fn hash_password(password string, salt string) string {
