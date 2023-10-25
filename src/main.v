@@ -71,15 +71,13 @@ fn (mut app App) set_up_databases(app_path string) ! {
 
 	sessions_path := get_db_path(app_path, 'sessions.db')
 	mut session_db := sqlite.connect(sessions_path)!
-	sql session_db {
-		create table Session
-	} or { panic(err) }
+	create_session_db(&session_db)!
 
 	users_path := get_db_path(app_path, 'users.db')
 	mut user_db := sqlite.connect(users_path)!
 	sql user_db {
 		create table User
-	} or { panic(err) }
+	}!
 
 	data_path := get_db_path(app_path, 'data.db')
 	mut data_db := sqlite.connect(data_path)!

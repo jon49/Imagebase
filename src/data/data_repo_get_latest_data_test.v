@@ -3,8 +3,8 @@ module data
 import db.sqlite
 
 fn test_get_latest_data() {
-	mut db := sqlite.connect(':memory:') or { panic(err) }
-	create_result := create_db(&db) or { panic(err) }
+	mut db := sqlite.connect(':memory:')!
+	create_result := create_db(&db)!
 	assert create_result == 101 // Successful
 
 	data := [

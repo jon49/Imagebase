@@ -41,7 +41,7 @@ fn (mut app App) login_post() vweb.Result {
 	return app.redirect('/web/?success=true')
 }
 
-['/api/login'; post]
+['/api/authentication/login'; post]
 fn (mut app App) api_login_post() vweb.Result {
 	user := UserDto{
 		email: app.form['email']
@@ -56,9 +56,19 @@ fn (mut app App) api_login_post() vweb.Result {
 }
 
 [middleware: check_auth]
-['/api/logout'; post]
+['/api/authentication/logout'; post]
 fn (mut app App) api_logout_post() vweb.Result {
 	app.delete_session() or { return app.message_response(err) }
+
+	app.set_status(204, '')
+	return app.ok('')
+}
+
+['/api/authentication/forgot-password'; post]
+fn (mut app App) api_forgot_password_post() vweb.Result {
+	email := app.form['email']
+
+	forgot_password(&app.user_db, &app.session_db, email) or { return app.message_response(err) }
 
 	app.set_status(204, '')
 	return app.ok('')
@@ -86,7 +96,7 @@ fn (mut app App) register_post() vweb.Result {
 	return app.redirect('/web/?success=true')
 }
 
-['/api/register'; post]
+['/api/authentication/register'; post]
 fn (mut app App) api_register() vweb.Result {
 	user := User{
 		email: app.form['email']

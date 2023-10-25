@@ -1,4 +1,8 @@
 // See: https://github.com/vlang/v/blob/master/vlib/vweb/tests/controller_test.v
+
+module main
+
+import db.sqlite
 import net.http
 import os
 import time
@@ -22,13 +26,6 @@ const (
 struct Test {
 mut:
 	session string
-}
-
-pub struct DataDto {
-pub:
-	key  string
-	data ?string
-	id   int
 }
 
 fn testsuite_begin() {
@@ -93,13 +90,13 @@ fn test_should_fail_when_not_logged_in_and_adding_data() {
 }
 
 fn test_should_reject_invalid_submissions() {
-	response := http.post_form('${local_url}/api/register', {
+	response := http.post_form('${local_url}/api/authentication/register', {
 		'email':    ''
 		'password': 'password'
 	})!
 	assert response.status() == .bad_request
 
-	response2 := http.post_form('${local_url}/api/register', {
+	response2 := http.post_form('${local_url}/api/authentication/register', {
 		'email':    'test@test.com'
 		'password': ''
 	})!
@@ -107,7 +104,7 @@ fn test_should_reject_invalid_submissions() {
 }
 
 fn test_should_be_able_to_register_new_user() {
-	response := http.post_form('${local_url}/api/register', {
+	response := http.post_form('${local_url}/api/authentication/register', {
 		'email':    'test@test.com'
 		'password': 'password'
 	})!
@@ -118,13 +115,13 @@ fn test_should_be_able_to_register_new_user() {
 }
 
 fn test_should_reject_invalid_login() {
-	response := http.post_form('${local_url}/api/login', {
+	response := http.post_form('${local_url}/api/authentication/login', {
 		'email':    ''
 		'password': 'password'
 	})!
 	assert response.status() == .bad_request
 
-	response2 := http.post_form('${local_url}/api/login', {
+	response2 := http.post_form('${local_url}/api/authentication/login', {
 		'email':    'test@test.com'
 		'password': ''
 	})!
@@ -132,13 +129,13 @@ fn test_should_reject_invalid_login() {
 }
 
 fn test_should_be_able_to_login() {
-	fail_password := http.post_form('${local_url}/api/login', {
+	fail_password := http.post_form('${local_url}/api/authentication/login', {
 		'email':    'test@test.com'
 		'password': 'a'
 	})!
 	assert fail_password.status() == .bad_request
 
-	fail_email := http.post_form('${local_url}/api/login', {
+	fail_email := http.post_form('${local_url}/api/authentication/login', {
 		'email':    'test1@test.com'
 		'password': 'password'
 	})!
@@ -148,8 +145,29 @@ fn test_should_be_able_to_login() {
 	assert session.len > 0
 }
 
+fn test_should_be_able_to_create_forgot_password_token() {
+	session := login()!
+
+	response := http.post_form('${local_url}/api/authentication/forgot-password', {
+		'email': 'test@test.com'
+	})!
+
+	assert response.status() == .no_content
+
+	session_db_path := os.join_path(app_path, 'sessions.db')
+	mut session_db := sqlite.connect(session_db_path) or {
+		panic('Could not open session db: ${err.msg()}')
+	}
+
+	resets := sql session_db {
+		select from PasswordReset
+	}!
+
+	assert resets.len == 1
+}
+
 fn login() !string {
-	response := http.post_form('${local_url}/api/login', {
+	response := http.post_form('${local_url}/api/authentication/login', {
 		'email':    'test@test.com'
 		'password': 'password'
 	})!
@@ -163,7 +181,7 @@ fn test_should_be_able_to_logout() {
 	session := login()!
 
 	response := http.fetch(http.FetchConfig{
-		url: '${local_url}/api/logout'
+		url: '${local_url}/api/authentication/logout'
 		method: .post
 		cookies: {
 			'session': session

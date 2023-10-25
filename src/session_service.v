@@ -1,5 +1,6 @@
 module main
 
+import db.sqlite
 import rand
 import time
 import validation
@@ -10,6 +11,23 @@ struct Session {
 	user_id      int
 	session      string    [unique]
 	created_date time.Time
+}
+
+[table: 'password_reset']
+struct PasswordReset {
+	id           int    [primary; sql: serial]
+	user_id      int
+	token        string [unique]
+	created_date string [default: 'CURRENT_TIMESTAMP'; sql_type: 'DATETIME']
+}
+
+fn create_session_db(session_db &sqlite.DB) ! {
+	sql session_db {
+		create table Session
+	}!
+	sql session_db {
+		create table PasswordReset
+	}!
 }
 
 fn (mut app App) create_session(user_id int) !Session {
@@ -36,6 +54,32 @@ fn (mut app App) login(email string, password string) !Session {
 	user_id := app.get_user_id(email, password)!
 
 	return app.create_session(user_id)
+}
+
+fn forgot_password(user_db &sqlite.DB, session_db &sqlite.DB, email string) ! {
+	mut v := validation.start()
+	v.validate(email.len > 0, 'Email cannot be empty.')
+	v.result()!
+
+	user := sql user_db {
+		select from User where email == email limit 1
+	}!
+	if user.len == 0 {
+		return
+	}
+
+	user_id := user[0].id
+
+	// Create a password reset token
+	uuid := rand.uuid_v4()
+	password_reset := PasswordReset{
+		user_id: user_id
+		token: uuid
+	}
+
+	sql session_db {
+		insert password_reset into PasswordReset
+	}!
 }
 
 fn (mut app App) delete_session() ! {
