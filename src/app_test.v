@@ -145,62 +145,6 @@ fn test_should_be_able_to_login() {
 	assert session.len > 0
 }
 
-fn test_should_be_able_to_create_forgot_password_token() {
-	session := login()!
-
-	response := http.post_form('${local_url}/api/authentication/forgot-password', {
-		'email': 'test@test.com'
-	})!
-
-	assert response.status() == .no_content
-
-	session_db_path := os.join_path(app_path, 'sessions.db')
-	mut session_db := sqlite.connect(session_db_path) or {
-		panic('Could not open session db: ${err.msg()}')
-	}
-
-	resets := sql session_db {
-		select from PasswordReset
-	}!
-
-	assert resets.len == 1
-}
-
-fn login() !string {
-	response := http.post_form('${local_url}/api/authentication/login', {
-		'email':    'test@test.com'
-		'password': 'password'
-	})!
-	assert response.status() == .ok
-	cookie := response.header.get(.set_cookie)!
-	session := cookie.split(';')[0].split('=')[1]
-	return session
-}
-
-fn test_should_be_able_to_logout() {
-	session := login()!
-
-	response := http.fetch(http.FetchConfig{
-		url: '${local_url}/api/authentication/logout'
-		method: .post
-		cookies: {
-			'session': session
-		}
-	})!
-
-	assert response.status() == .no_content
-
-	response2 := http.fetch(http.FetchConfig{
-		url: '${local_url}/api/data'
-		method: .post
-		cookies: {
-			'session': session
-		}
-	})!
-
-	assert response2.status() == .unauthorized
-}
-
 fn test_should_be_able_to_add_data() {
 	session := login()!
 
@@ -255,6 +199,92 @@ fn test_should_be_able_to_add_data() {
 	assert response3.body == '{"data":[{"key":"[1,\\"test-key\\"]","data":"{\\"my\\":\\"data\\",\\"is\\":\\"here\\"}","id":1},{"key":"\\"test-key2\\"","data":"{\\"my\\":\\"data\\",\\"is\\":\\"here\\"}","id":3}],"saved":[],"conflicted":[],"lastSyncedId":3}'
 }
 
+fn test_should_be_able_to_logout() {
+	session := login()!
+
+	response := http.fetch(http.FetchConfig{
+		url: '${local_url}/api/authentication/logout'
+		method: .post
+		cookies: {
+			'session': session
+		}
+	})!
+
+	assert response.status() == .no_content
+
+	response2 := http.fetch(http.FetchConfig{
+		url: '${local_url}/api/data'
+		method: .post
+		cookies: {
+			'session': session
+		}
+	})!
+
+	assert response2.status() == .unauthorized
+}
+
+fn test_should_be_able_to_create_forgot_password_token() {
+	session := login()!
+
+	response := http.post_form('${local_url}/api/authentication/forgot-password', {
+		'email': 'test@test.com'
+	})!
+
+	assert response.status() == .no_content
+
+	session_db_path := os.join_path(app_path, 'sessions.db')
+	mut session_db := sqlite.connect(session_db_path)!
+
+	resets := sql session_db {
+		select from PasswordReset
+	}!
+
+	assert resets.len == 1
+}
+
+fn test_should_be_able_to_create_new_password() {
+	session_db_path := os.join_path(app_path, 'sessions.db')
+	mut session_db := sqlite.connect(session_db_path)!
+	resets := sql session_db {
+		select from PasswordReset
+	}!
+
+	user_db_path := os.join_path(app_path, 'users.db')
+	mut user_db := sqlite.connect(user_db_path)!
+	users := sql user_db {
+		select from User
+	}!
+	old_password := users[0].password
+
+	println('toke: ${resets[0].token}')
+	response := http.post_form('${local_url}/api/authentication/reset-password', {
+		'token':    resets[0].token
+		'password': 'new password'
+	})!
+
+	assert response.status() == .no_content, response.body
+
+	response2 := http.post_form('${local_url}/api/authentication/login', {
+		'email':    'test@test.com'
+		'password': 'new password'
+	})!
+
+	assert response2.status() == .ok
+
+	users_2 := sql user_db {
+		select from User
+	}!
+	new_password := users_2[0].password
+
+	assert old_password != new_password
+
+	password_reset_count := sql session_db {
+		select count from PasswordReset
+	}!
+
+	assert password_reset_count == 0
+}
+
 fn test_shutdown() {
 	x := http.fetch(
 		url: '${local_url}/shutdown?key=${kill_key}'
@@ -266,4 +296,15 @@ fn test_shutdown() {
 	assert x.status() == .ok
 	assert x.body == 'good bye'
 	os.rmdir_all(test_path)!
+}
+
+fn login() !string {
+	response := http.post_form('${local_url}/api/authentication/login', {
+		'email':    'test@test.com'
+		'password': 'password'
+	})!
+	assert response.status() == .ok
+	cookie := response.header.get(.set_cookie)!
+	session := cookie.split(';')[0].split('=')[1]
+	return session
 }

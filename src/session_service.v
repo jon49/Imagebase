@@ -1,6 +1,7 @@
 module main
 
 import db.sqlite
+import msg
 import rand
 import time
 import validation
@@ -15,10 +16,10 @@ struct Session {
 
 [table: 'password_reset']
 struct PasswordReset {
-	id           int    [primary; sql: serial]
+	id           int       [primary; sql: serial]
 	user_id      int
-	token        string [unique]
-	created_date string [default: 'CURRENT_TIMESTAMP'; sql_type: 'DATETIME']
+	token        string    [unique]
+	created_date time.Time
 }
 
 fn create_session_db(session_db &sqlite.DB) ! {
@@ -35,7 +36,7 @@ fn (mut app App) create_session(user_id int) !Session {
 	session := Session{
 		user_id: user_id
 		session: uuid
-		created_date: time.now()
+		created_date: time.utc()
 	}
 
 	sql app.session_db {
@@ -75,10 +76,46 @@ fn forgot_password(user_db &sqlite.DB, session_db &sqlite.DB, email string) ! {
 	password_reset := PasswordReset{
 		user_id: user_id
 		token: uuid
+		created_date: time.utc()
 	}
 
 	sql session_db {
 		insert password_reset into PasswordReset
+	}!
+}
+
+fn reset_password(user_db &sqlite.DB, session_db &sqlite.DB, salt string, token string, password string) ! {
+	mut v := validation.start()
+	v.validate(token.len > 0, 'Token cannot be empty.')
+	v.validate(password.len > 0, 'Password cannot be empty.')
+	v.result()!
+
+	password_reset_ := sql session_db {
+		select from PasswordReset where token == token limit 1
+	}!
+	if password_reset_.len == 0 {
+		return msg.validation_error('Token has expired.')
+	}
+
+	password_reset := password_reset_[0]
+	// Check if token has expired
+	duration := time.Duration(1000 * 1000 * 1000 * 60 * 30)
+	if password_reset.created_date > time.utc().add(duration) {
+		sql session_db {
+			delete from PasswordReset where token == token
+		}!
+		return msg.validation_error('Token has expired.')
+	}
+
+	user_id := password_reset.user_id
+
+	salted_password := hash_password(password, salt)
+	sql user_db {
+		update User set password = salted_password where id == user_id
+	}!
+
+	sql session_db {
+		delete from PasswordReset where token == token
 	}!
 }
 

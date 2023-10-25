@@ -12,8 +12,7 @@ fn test_when_empty_password_return_early() {
 				assert err.msg() == 'Email cannot be empty.'
 			}
 			else {
-				println(err)
-				assert false, 'Should be a `BadRequestMessage` message.'
+				assert false, 'Should be a `ValidationMessage` message.'
 			}
 		}
 		return
