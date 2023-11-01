@@ -256,7 +256,6 @@ fn test_should_be_able_to_create_new_password() {
 	}!
 	old_password := users[0].password
 
-	println('toke: ${resets[0].token}')
 	response := http.post_form('${local_url}/api/authentication/reset-password', {
 		'token':    resets[0].token
 		'password': 'new password'
