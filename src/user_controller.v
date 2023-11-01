@@ -15,13 +15,19 @@ fn (mut app App) page_login() vweb.Result {
 }
 
 fn (mut app App) set_session(session string) {
+	expires := if session == '' {
+		time.utc()
+	} else {
+		time.utc().add_days(30)
+	}
 	app.set_cookie(
 		name: 'session'
-		value: session
-		expires: time.utc().add_days(30)
+		value: if session == '' { 'logged_out' } else { session }
+		expires: expires
 		secure: true
 		http_only: true
 		same_site: .same_site_strict_mode
+		path: '/'
 	)
 }
 
@@ -60,6 +66,7 @@ fn (mut app App) api_login_post() vweb.Result {
 fn (mut app App) api_logout_post() vweb.Result {
 	app.delete_session() or { return app.message_response(err) }
 
+	app.set_session('')
 	app.set_status(204, '')
 	return app.ok('')
 }
