@@ -1,6 +1,5 @@
 module main
 
-import json
 import msg
 import vweb
 
@@ -21,19 +20,19 @@ fn (mut app App) message_response(e IError) vweb.Result {
 	return match e {
 		msg.UnauthorizedMessage {
 			message := app.set_status_with_message(401, e)
-			app.json(json.encode(message))
+			app.json(message)
 		}
 		msg.NotFoundMessage {
 			message := app.set_status_with_message(404, e)
-			app.json(json.encode(message))
+			app.json(message)
 		}
 		msg.BadRequestMessage {
 			message := app.set_status_with_message(400, e)
-			app.json(json.encode(message))
+			app.json(message)
 		}
 		msg.ValidationMessage {
 			message := app.set_status_with_message(400, e)
-			app.json(json.encode(message))
+			app.json(message)
 		}
 		msg.SuccessMessage {
 			app.set_status(204, '')
@@ -42,9 +41,7 @@ fn (mut app App) message_response(e IError) vweb.Result {
 		else {
 			app.set_status(500, 'Internal Server Error')
 			message := ErrorResponse{500, 'Something happened which should not have.'}
-			// Throws parsing exception when nesting app.server_error() inside
-			// encode method.
-			app.json(json.encode(message))
+			app.json(message)
 		}
 	}
 }
