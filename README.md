@@ -10,8 +10,9 @@ me to focus mostly on the front end logic and keep the back end all the same. It
 does simple authentication with username/password and server-side cookies. It
 uses Sqlite to keep things simple.
 
-It uses V as I wanted to learn it and find it to be a fairly elegant language (I
-always say, "V is a better Go").
+It uses V as I wanted to learn it and find I it to be a fairly elegant language.
+I always say, "V is a better Go" — I have no idea if that is true or not as I've
+only followed the evolution of Go and have never programmed in it ☺.
 
 ## Etymology
 
