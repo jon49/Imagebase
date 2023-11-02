@@ -22,6 +22,15 @@ struct PasswordReset {
 	created_date time.Time
 }
 
+struct PasswordResetValues {
+	user_db          &sqlite.DB
+	session_db       &sqlite.DB
+	salt             string
+	token            string
+	password         string
+	password_confirm string
+}
+
 fn create_session_db(session_db &sqlite.DB) ! {
 	sql session_db {
 		create table Session
@@ -84,14 +93,19 @@ fn forgot_password(user_db &sqlite.DB, session_db &sqlite.DB, email string) ! {
 	}!
 }
 
-fn reset_password(user_db &sqlite.DB, session_db &sqlite.DB, salt string, token string, password string) ! {
+fn reset_password(reset &PasswordResetValues) ! {
 	mut v := validation.start()
-	v.validate(token.len > 0, 'Token cannot be empty.')
-	v.validate(password.len > 0, 'Password cannot be empty.')
+	v.validate(reset.token.len > 0, 'Token cannot be empty.')
+	v.validate(reset.password.len > 0, 'Password cannot be empty.')
+	v.validate(reset.password_confirm.len > 0, 'Password confirm cannot be empty.')
+	v.validate(reset.password == reset.password_confirm, 'Passwords do not match.')
 	v.result()!
 
+	session_db := reset.session_db
+	user_db := reset.user_db
+
 	password_reset_ := sql session_db {
-		select from PasswordReset where token == token limit 1
+		select from PasswordReset where token == reset.token limit 1
 	}!
 	if password_reset_.len == 0 {
 		return msg.validation_error('Token has expired.')
@@ -102,20 +116,20 @@ fn reset_password(user_db &sqlite.DB, session_db &sqlite.DB, salt string, token 
 	duration := time.Duration(1000 * 1000 * 1000 * 60 * 30)
 	if password_reset.created_date > time.utc().add(duration) {
 		sql session_db {
-			delete from PasswordReset where token == token
+			delete from PasswordReset where token == reset.token
 		}!
 		return msg.validation_error('Token has expired.')
 	}
 
 	user_id := password_reset.user_id
 
-	salted_password := hash_password(password, salt)
+	salted_password := hash_password(reset.password, reset.salt)
 	sql user_db {
 		update User set password = salted_password where id == user_id
 	}!
 
 	sql session_db {
-		delete from PasswordReset where token == token
+		delete from PasswordReset where token == reset.token
 	}!
 }
 
