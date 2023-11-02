@@ -5,16 +5,8 @@ import msg
 import time
 
 fn test_should_return_validation_error_for_empty_token() {
-	mut user_db := sqlite.connect(':memory:')!
-	mut session_db := sqlite.connect(':memory:')!
-	reset_password(&PasswordResetValues{
-		user_db: &user_db
-		session_db: &session_db
-		salt: 'salt'
-		token: ''
-		password: 'new_password'
-		password_confirm: 'new_password'
-	}) or {
+	mut app := create_app()!
+	app.reset_password('', 'new_password', 'new_password') or {
 		match err {
 			msg.ValidationMessage {
 				assert err.msg() == 'Token cannot be empty.'
@@ -29,16 +21,8 @@ fn test_should_return_validation_error_for_empty_token() {
 }
 
 fn test_should_return_validation_error_for_empty_password() {
-	mut user_db := sqlite.connect(':memory:')!
-	mut session_db := sqlite.connect(':memory:')!
-	reset_password(&PasswordResetValues{
-		user_db: &user_db
-		session_db: &session_db
-		salt: 'salt'
-		token: 'my toekn'
-		password: ''
-		password_confirm: 'new_password'
-	}) or {
+	mut app := create_app()!
+	app.reset_password('my token', '', 'new_password') or {
 		match err {
 			msg.ValidationMessage {
 				assert err.msg() == 'Password cannot be empty.\nPasswords do not match.'
@@ -53,16 +37,8 @@ fn test_should_return_validation_error_for_empty_password() {
 }
 
 fn test_should_return_validation_error_for_non_matching_passwords() {
-	mut user_db := sqlite.connect(':memory:')!
-	mut session_db := sqlite.connect(':memory:')!
-	reset_password(&PasswordResetValues{
-		user_db: &user_db
-		session_db: &session_db
-		salt: 'salt'
-		token: 'my toekn'
-		password: 'password'
-		password_confirm: 'new_password'
-	}) or {
+	mut app := create_app()!
+	app.reset_password('my token', 'password', 'new_password') or {
 		match err {
 			msg.ValidationMessage {
 				assert err.msg() == 'Passwords do not match.'
@@ -77,18 +53,8 @@ fn test_should_return_validation_error_for_non_matching_passwords() {
 }
 
 fn test_should_return_validation_error_when_no_token_found() {
-	dbs := create_dbs()!
-	user_db := dbs[0]
-	session_db := dbs[1]
-
-	reset_password(&PasswordResetValues{
-		user_db: user_db
-		session_db: session_db
-		salt: 'salt'
-		token: 'token'
-		password: 'new_password'
-		password_confirm: 'new_password'
-	}) or {
+	mut app := create_app()!
+	app.reset_password('token', 'new_password', 'new_password') or {
 		match err {
 			msg.ValidationMessage {
 				assert err.msg() == 'Token has expired.'
@@ -103,9 +69,7 @@ fn test_should_return_validation_error_when_no_token_found() {
 }
 
 fn test_should_return_validation_error_when_token_is_expired() {
-	dbs := create_dbs()!
-	user_db := dbs[0]
-	session_db := dbs[1]
+	mut app := create_app()!
 
 	reset := PasswordReset{
 		user_id: 1
@@ -113,18 +77,11 @@ fn test_should_return_validation_error_when_token_is_expired() {
 		created_date: time.utc().add(time.Duration(1000 * 1000 * 1000 * 60 * 60))
 	}
 
-	sql session_db {
+	sql app.session_db {
 		insert reset into PasswordReset
 	}!
 
-	reset_password(&PasswordResetValues{
-		user_db: user_db
-		session_db: session_db
-		salt: 'salt'
-		token: 'token'
-		password: 'password'
-		password_confirm: 'password'
-	}) or {
+	app.reset_password('token', 'password', 'password') or {
 		match err {
 			msg.ValidationMessage {
 				assert err.msg() == 'Token has expired.'
@@ -133,7 +90,7 @@ fn test_should_return_validation_error_when_token_is_expired() {
 				assert false, 'Should be a `ValidationMessage` message.'
 			}
 		}
-		count := sql session_db {
+		count := sql app.session_db {
 			select count from PasswordReset
 		}!
 		assert count == 0, 'Should delete the token.'
@@ -142,12 +99,16 @@ fn test_should_return_validation_error_when_token_is_expired() {
 	assert false, 'Should return early.'
 }
 
-fn create_dbs() ![]&sqlite.DB {
+fn create_app() !App {
 	mut user_db := sqlite.connect(':memory:')!
 	sql user_db {
 		create table User
 	}!
 	mut session_db := sqlite.connect(':memory:')!
 	create_session_db(&session_db)!
-	return [&user_db, &session_db]
+	return App{
+		user_db: user_db
+		session_db: session_db
+		salt: 'salt'
+	}
 }

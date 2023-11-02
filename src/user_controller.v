@@ -55,14 +55,7 @@ fn (mut app App) api_reset_password_post() vweb.Result {
 	password := app.form['password']
 	password_confirm := app.form['passwordConfirm']
 
-	reset_password(&PasswordResetValues{
-		user_db: &app.user_db
-		session_db: &app.session_db
-		salt: app.salt
-		token: token
-		password: password
-		password_confirm: password_confirm
-	}) or { return app.message_response(err) }
+	app.reset_password(token, password, password_confirm) or { return app.message_response(err) }
 
 	app.set_status(204, '')
 	return app.ok('')
