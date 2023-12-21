@@ -6,7 +6,7 @@ const (
 	}
 )
 
-[noinit]
+@[noinit]
 pub struct Message {
 	msg string
 }
@@ -19,27 +19,27 @@ pub fn (err Message) code() int {
 	return 0
 }
 
-[noinit]
+@[noinit]
 pub struct SuccessMessage {
 	Message
 }
 
-[noinit]
+@[noinit]
 pub struct ValidationMessage {
 	Message
 }
 
-[noinit]
+@[noinit]
 pub struct UnauthorizedMessage {
 	Message
 }
 
-[noinit]
+@[noinit]
 pub struct NotFoundMessage {
 	Message
 }
 
-[noinit]
+@[noinit]
 pub struct BadRequestMessage {
 	Message
 }

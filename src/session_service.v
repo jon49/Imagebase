@@ -6,19 +6,19 @@ import rand
 import time
 import validation
 
-[table: 'sessions']
+@[table: 'sessions']
 struct Session {
-	id           int       [primary; sql: serial]
+	id           int       @[primary; sql: serial]
 	user_id      int
-	session      string    [unique]
+	session      string    @[unique]
 	created_date time.Time
 }
 
-[table: 'password_reset']
+@[table: 'password_reset']
 struct PasswordReset {
-	id           int       [primary; sql: serial]
+	id           int       @[primary; sql: serial]
 	user_id      int
-	token        string    [unique]
+	token        string    @[unique]
 	created_date time.Time
 }
 

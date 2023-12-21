@@ -5,9 +5,9 @@ import time
 import msg
 import validation
 
-[table: 'users']
+@[table: 'users']
 struct User {
-	id           int       [primary; sql: serial]
+	id           int       @[primary; sql: serial]
 	email        string
 	password     string
 	created_date time.Time

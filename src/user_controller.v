@@ -4,8 +4,8 @@ import time
 import vweb
 
 struct UserDto {
-	email    string [required]
-	password string [required]
+	email    string @[required]
+	password string @[required]
 }
 
 fn (mut app App) set_session(session string) {
@@ -25,7 +25,7 @@ fn (mut app App) set_session(session string) {
 	)
 }
 
-['/api/authentication/login'; post]
+@['/api/authentication/login'; post]
 fn (mut app App) api_login_post() vweb.Result {
 	user := UserDto{
 		email: app.form['email']
@@ -39,8 +39,8 @@ fn (mut app App) api_login_post() vweb.Result {
 	return app.json('{"success":true}')
 }
 
-[middleware: check_auth]
-['/api/authentication/logout'; post]
+@[middleware: check_auth]
+@['/api/authentication/logout'; post]
 fn (mut app App) api_logout_post() vweb.Result {
 	app.delete_session() or { return app.message_response(err) }
 
@@ -49,7 +49,7 @@ fn (mut app App) api_logout_post() vweb.Result {
 	return app.ok('')
 }
 
-['/api/authentication/reset-password'; post]
+@['/api/authentication/reset-password'; post]
 fn (mut app App) api_reset_password_post() vweb.Result {
 	token := app.form['token']
 	password := app.form['password']
@@ -65,7 +65,7 @@ fn (mut app App) api_reset_password_post() vweb.Result {
 	return app.ok('')
 }
 
-['/api/authentication/forgot-password'; post]
+@['/api/authentication/forgot-password'; post]
 fn (mut app App) api_forgot_password_post() vweb.Result {
 	email := app.form['email']
 
@@ -75,7 +75,7 @@ fn (mut app App) api_forgot_password_post() vweb.Result {
 	return app.ok('')
 }
 
-['/api/authentication/register'; post]
+@['/api/authentication/register'; post]
 fn (mut app App) api_register() vweb.Result {
 	user := User{
 		email: app.form['email']

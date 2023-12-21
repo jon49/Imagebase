@@ -2,13 +2,13 @@ module data
 
 import db.sqlite
 
-[table: 'data']
+@[table: 'data']
 struct Data {
-	id        int    [primary; sql: serial]
+	id        int    @[primary; sql: serial]
 	user_id   int
 	key       string
-	value     string [null]
-	timestamp string [default: 'CURRENT_TIMESTAMP'; sql_type: 'DATETIME']
+	value     string @[null]
+	timestamp string @[default: 'CURRENT_TIMESTAMP'; sql_type: 'DATETIME']
 }
 
 pub fn create_db(db &sqlite.DB) !int {

@@ -6,11 +6,11 @@ import os
 
 pub struct Config {
 pub:
-	app_path          string [json: appPath]
-	kill_key          string [json: killKey]
+	app_path          string @[json: appPath]
+	kill_key          string @[json: killKey]
 	port              int = 8000
 	salt              string
-	static_files_path string [json: staticFiles]
+	static_files_path string @[json: staticFiles]
 }
 
 pub fn get_config(args []string) !&Config {

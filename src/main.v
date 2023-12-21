@@ -10,12 +10,12 @@ import vweb
 struct App {
 	vweb.Context
 pub:
-	kill_key string [vweb_global]
-	salt     string [vweb_global]
+	kill_key string @[vweb_global]
+	salt     string @[vweb_global]
 pub mut:
 	db         sqlite.DB
-	session_db sqlite.DB [vweb_global]
-	user_db    sqlite.DB [vweb_global]
+	session_db sqlite.DB @[vweb_global]
+	user_db    sqlite.DB @[vweb_global]
 	user_id    int
 	session    string
 }
@@ -37,7 +37,7 @@ fn main() {
 	vweb.run(app, config.port)
 }
 
-['/shutdown'; post]
+@['/shutdown'; post]
 fn (mut app App) shutdown() vweb.Result {
 	key := app.query['key']
 	if app.kill_key.len == 0 {
