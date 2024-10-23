@@ -7,21 +7,19 @@ import net.http
 import os
 import time
 
-const (
-	vexe            = @VEXE
-	test_path       = os.join_path(os.temp_dir(), 'simple-server-test')
-	config_filename = os.join_path(test_path, 'config.json')
-	temp_filename   = os.join_path(test_path, 'temp.txt')
-	app_path        = os.join_path(test_path, 'my-app')
-	static_files    = os.join_path(app_path, 'static')
-	static_file     = os.join_path(static_files, 'index.html')
-	sport           = 12382
-	local_url       = 'http://localhost:${sport}'
-	serverexe       = os.join_path(os.cache_dir(), 'SimpleServer.exe')
-	cwd             = os.getwd()
-	cmd_suffix      = '> /dev/null &'
-	kill_key        = 'killme'
-)
+const vexe = @VEXE
+const test_path = os.join_path(os.temp_dir(), 'simple-server-test')
+const config_filename = os.join_path(test_path, 'config.json')
+const temp_filename = os.join_path(test_path, 'temp.txt')
+const app_path = os.join_path(test_path, 'my-app')
+const static_files = os.join_path(app_path, 'static')
+const static_file = os.join_path(static_files, 'index.html')
+const sport = 12382
+const local_url = 'http://localhost:${sport}'
+const serverexe = os.join_path(os.cache_dir(), 'SimpleServer.exe')
+const cwd = os.getwd()
+const cmd_suffix = '> /dev/null &'
+const kill_key = 'killme'
 
 struct Test {
 mut:
@@ -149,12 +147,12 @@ fn test_should_be_able_to_add_data() {
 	session := login()!
 
 	response := http.fetch(http.FetchConfig{
-		url: '${local_url}/api/data'
-		method: .post
+		url:     '${local_url}/api/data'
+		method:  .post
 		cookies: {
 			'session': session
 		}
-		data: '{ "lastSyncId": 0,
+		data:    '{ "lastSyncId": 0,
            "data": [{
                "key": [1, "test-key"],
                "data": { "my": "data", "is": "here" },
@@ -169,12 +167,12 @@ fn test_should_be_able_to_add_data() {
 	assert response.body == '{"data":[],"saved":[{"key":"[1,\\"test-key\\"]","id":1},{"key":"\\"test-key2\\"","id":2}],"conflicted":[],"lastSyncedId":2}'
 
 	response2 := http.fetch(http.FetchConfig{
-		url: '${local_url}/api/data'
-		method: .post
+		url:     '${local_url}/api/data'
+		method:  .post
 		cookies: {
 			'session': session
 		}
-		data: '{ "lastSyncedId": 1,
+		data:    '{ "lastSyncedId": 1,
            "data": [{
                "key": "test-key2",
                "data": { "my": "data", "is": "here" },
@@ -187,12 +185,12 @@ fn test_should_be_able_to_add_data() {
 	assert response2.body.ends_with('"}],"lastSyncedId":3}')
 
 	response3 := http.fetch(http.FetchConfig{
-		url: '${local_url}/api/data'
-		method: .post
+		url:     '${local_url}/api/data'
+		method:  .post
 		cookies: {
 			'session': session
 		}
-		data: '{ "lastSyncedId": 0 }'
+		data:    '{ "lastSyncedId": 0 }'
 	})!
 
 	assert response3.status() == .ok
@@ -203,8 +201,8 @@ fn test_should_be_able_to_logout() {
 	session := login()!
 
 	response := http.fetch(http.FetchConfig{
-		url: '${local_url}/api/authentication/logout'
-		method: .post
+		url:     '${local_url}/api/authentication/logout'
+		method:  .post
 		cookies: {
 			'session': session
 		}
@@ -213,8 +211,8 @@ fn test_should_be_able_to_logout() {
 	assert response.status() == .no_content
 
 	response2 := http.fetch(http.FetchConfig{
-		url: '${local_url}/api/data'
-		method: .post
+		url:     '${local_url}/api/data'
+		method:  .post
 		cookies: {
 			'session': session
 		}
@@ -287,7 +285,7 @@ fn test_should_be_able_to_create_new_password() {
 
 fn test_shutdown() {
 	x := http.fetch(
-		url: '${local_url}/shutdown?key=${kill_key}'
+		url:    '${local_url}/shutdown?key=${kill_key}'
 		method: .post
 	) or {
 		assert err.msg() == ''

@@ -9,13 +9,13 @@ fn test_save_data() {
 	data := [
 		Data{
 			user_id: 2
-			key: 'key1'
-			value: 'valueA'
+			key:     'key1'
+			value:   'valueA'
 		},
 		Data{
 			user_id: 2
-			key: 'key2'
-			value: 'valueB'
+			key:     'key2'
+			value:   'valueB'
 		},
 	]
 
@@ -23,11 +23,11 @@ fn test_save_data() {
 
 	assert result == [
 		Saved{
-			id: 1
+			id:  1
 			key: 'key1'
 		},
 		Saved{
-			id: 2
+			id:  2
 			key: 'key2'
 		},
 	]
@@ -40,19 +40,19 @@ fn test_save_data() {
 
 	first := saved_data.first()
 	assert first == Data{
-		id: 1
-		user_id: 2
-		key: 'key1'
-		value: 'valueA'
+		id:        1
+		user_id:   2
+		key:       'key1'
+		value:     'valueA'
 		timestamp: first.timestamp
 	}
 
 	last := saved_data.last()
 	assert last == Data{
-		id: 2
-		user_id: 2
-		key: 'key2'
-		value: 'valueB'
+		id:        2
+		user_id:   2
+		key:       'key2'
+		value:     'valueB'
 		timestamp: last.timestamp
 	}
 

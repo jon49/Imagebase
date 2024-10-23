@@ -1,10 +1,8 @@
 module msg
 
-const (
-	success = SuccessMessage{
-		msg: ''
-	}
-)
+const success = SuccessMessage{
+	msg: ''
+}
 
 @[noinit]
 pub struct Message {
@@ -69,5 +67,5 @@ pub fn bad_request(message string) IError {
 }
 
 pub fn success() IError {
-	return &msg.success
+	return &success
 }

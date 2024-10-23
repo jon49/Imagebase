@@ -17,6 +17,7 @@ pub:
 }
 
 pub struct SyncData {
+pub:
 	user_id       int
 	last_id       int
 	uploaded_data []SimpleData
@@ -53,8 +54,8 @@ pub fn sync_data(db &sqlite.DB, d &SyncData) !SyncDataReturn {
 			continue
 		}
 		new_user_data << SimpleData{
-			id: latest.id
-			key: latest.key
+			id:    latest.id
+			key:   latest.key
 			value: latest.value
 		}
 	}
@@ -63,8 +64,8 @@ pub fn sync_data(db &sqlite.DB, d &SyncData) !SyncDataReturn {
 	for uploaded in d.uploaded_data {
 		uploaded_data << Data{
 			user_id: d.user_id
-			key: uploaded.key
-			value: uploaded.value
+			key:     uploaded.key
+			value:   uploaded.value
 		}
 	}
 	saved := save_data(db, uploaded_data)!
@@ -75,9 +76,9 @@ pub fn sync_data(db &sqlite.DB, d &SyncData) !SyncDataReturn {
 
 	return SyncDataReturn{
 		conflicted_data: conflicted
-		last_synced_id: last_synced_id
-		new_user_data: new_user_data
-		saved: saved
+		last_synced_id:  last_synced_id
+		new_user_data:   new_user_data
+		saved:           saved
 	}
 }
 

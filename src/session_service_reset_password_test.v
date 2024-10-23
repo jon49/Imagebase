@@ -72,8 +72,8 @@ fn test_should_return_validation_error_when_token_is_expired() {
 	mut app := create_app()!
 
 	reset := PasswordReset{
-		user_id: 1
-		token: 'token'
+		user_id:      1
+		token:        'token'
 		created_date: time.utc().add(time.Duration(1000 * 1000 * 1000 * 60 * 60))
 	}
 
@@ -107,8 +107,8 @@ fn create_app() !App {
 	mut session_db := sqlite.connect(':memory:')!
 	create_session_db(&session_db)!
 	return App{
-		user_db: user_db
+		user_db:    user_db
 		session_db: session_db
-		salt: 'salt'
+		salt:       'salt'
 	}
 }

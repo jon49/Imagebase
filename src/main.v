@@ -5,19 +5,25 @@ import db.sqlite
 import os
 import time
 import utils { get_config }
-import vweb
+import veb
 
-struct App {
-	vweb.Context
+pub struct Context {
+	veb.Context
+pub mut:
+	user_id int
+	session string
+}
+
+pub struct App {
+	veb.StaticHandler
+	veb.Middleware[Context]
 pub:
-	kill_key string @[vweb_global]
-	salt     string @[vweb_global]
+	kill_key string @[veb_global]
+	salt     string @[veb_global]
 pub mut:
 	db         sqlite.DB
-	session_db sqlite.DB @[vweb_global]
-	user_db    sqlite.DB @[vweb_global]
-	user_id    int
-	session    string
+	session_db sqlite.DB @[veb_global]
+	user_db    sqlite.DB @[veb_global]
 }
 
 fn main() {
@@ -25,29 +31,32 @@ fn main() {
 
 	mut app := &App{
 		kill_key: config.kill_key
-		salt: config.salt
+		salt:     config.salt
 	}
 
 	app.set_up_databases(config.app_path)!
 
 	if config.static_files_path.len > 0 {
-		app.handle_static(config.static_files_path, true)
+		app.handle_static(config.static_files_path, true)!
 	}
 
-	vweb.run(app, config.port)
+	app.route_use('/api/authentication/logout', handler: app.check_auth)
+	app.route_use('/api/data', handler: app.check_auth)
+
+	veb.run[App, Context](mut app, config.port)
 }
 
 @['/shutdown'; post]
-fn (mut app App) shutdown() vweb.Result {
-	key := app.query['key']
+fn (mut app App) shutdown(mut ctx Context) veb.Result {
 	if app.kill_key.len == 0 {
-		return app.text('Cannot kill me!')
+		return ctx.text('Cannot kill me!')
 	}
+	key := ctx.query['key']
 	if key != app.kill_key {
-		return app.text('Wrong key!')
+		return ctx.text('Wrong key!')
 	}
 	spawn app.gracefull_exit()
-	return app.ok('good bye')
+	return ctx.ok('good bye')
 }
 
 fn (mut app App) gracefull_exit() {

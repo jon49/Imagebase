@@ -1,52 +1,53 @@
 module main
 
+import net.http
 import msg
-import vweb
+import veb
 
 struct ErrorResponse {
 	status  int
 	message string
 }
 
-fn (mut app App) set_status_with_message(code int, error IError) &ErrorResponse {
-	app.set_status(code, '')
+fn (mut ctx Context) set_status_with_message(code int, error IError) &ErrorResponse {
+	ctx.res.set_status(http.status_from_int(code))
 	if code == 500 {
 		return &ErrorResponse{500, 'Something happened which should not have.'}
 	}
 	return &ErrorResponse{code, error.msg()}
 }
 
-fn (mut app App) message_response(e IError) vweb.Result {
+fn (mut ctx Context) message_response(e IError) veb.Result {
 	return match e {
 		msg.UnauthorizedMessage {
-			message := app.set_status_with_message(401, e)
-			app.json(message)
+			message := ctx.set_status_with_message(401, e)
+			ctx.json(message)
 		}
 		msg.NotFoundMessage {
-			message := app.set_status_with_message(404, e)
-			app.json(message)
+			message := ctx.set_status_with_message(404, e)
+			ctx.json(message)
 		}
 		msg.BadRequestMessage {
-			message := app.set_status_with_message(400, e)
-			app.json(message)
+			message := ctx.set_status_with_message(400, e)
+			ctx.json(message)
 		}
 		msg.ValidationMessage {
-			message := app.set_status_with_message(400, e)
-			app.json(message)
+			message := ctx.set_status_with_message(400, e)
+			ctx.json(message)
 		}
 		msg.SuccessMessage {
-			app.set_status(204, '')
-			app.ok('')
+			ctx.res.set_status(.no_content)
+			ctx.ok('')
 		}
 		else {
-			app.set_status(500, 'Internal Server Error')
+			ctx.res.set_status(.internal_server_error)
 			message := ErrorResponse{500, 'Something happened which should not have.'}
-			app.json(message)
+			ctx.json(message)
 		}
 	}
 }
 
-fn (mut app App) created(location string) {
-	app.set_status(201, 'created')
-	app.add_header('Content-Location', location)
+fn (mut ctx Context) created(location string) {
+	ctx.res.set_status(.created)
+	ctx.res.header.add(.content_location, location)
 }

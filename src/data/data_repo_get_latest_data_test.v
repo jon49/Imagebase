@@ -10,23 +10,23 @@ fn test_get_latest_data() {
 	data := [
 		Data{
 			user_id: 1
-			key: 'key1'
-			value: 'valueA'
+			key:     'key1'
+			value:   'valueA'
 		}, // Original data
 		Data{
 			user_id: 2
-			key: 'key1'
-			value: 'valueB'
+			key:     'key1'
+			value:   'valueB'
 		}, // Different user
 		Data{
 			user_id: 1
-			key: 'key2'
-			value: 'valueC'
+			key:     'key2'
+			value:   'valueC'
 		}, // New data
 		Data{
 			user_id: 1
-			key: 'key1'
-			value: 'valueD'
+			key:     'key1'
+			value:   'valueD'
 		}, // Overwritten Data
 	]
 	save_data(db, data) or { panic(err) }
@@ -36,17 +36,17 @@ fn test_get_latest_data() {
 
 	first := result.first()
 	assert first == SimpleData{
-		id: 3
-		key: 'key2'
-		value: 'valueC'
+		id:        3
+		key:       'key2'
+		value:     'valueC'
 		timestamp: first.timestamp
 	}
 
 	last := result.last()
 	assert last == SimpleData{
-		id: 4
-		key: 'key1'
-		value: 'valueD'
+		id:        4
+		key:       'key1'
+		value:     'valueD'
 		timestamp: last.timestamp
 	}
 

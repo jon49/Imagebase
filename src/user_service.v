@@ -7,7 +7,7 @@ import validation
 
 @[table: 'users']
 struct User {
-	id           int       @[primary; sql: serial]
+	id           int @[primary; sql: serial]
 	email        string
 	password     string
 	created_date time.Time
@@ -26,8 +26,8 @@ fn (mut app App) register_new_user(email string, password string) !int {
 
 	hashed_password := hash_password(password, app.salt)
 	user := User{
-		email: email
-		password: hashed_password
+		email:        email
+		password:     hashed_password
 		created_date: time.utc()
 	}
 

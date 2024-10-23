@@ -4,10 +4,10 @@ import data
 import db.sqlite
 import utils { parse_json }
 import validation
-import vweb
+import veb
 
 struct SyncDataDto {
-	last_synced_id int       @[json: lastSyncedId]
+	last_synced_id int @[json: lastSyncedId]
 	data           []DataDto
 }
 
@@ -37,15 +37,14 @@ pub:
 	data           []DataDto
 	saved          []SavedDto
 	conflicted     []ConflictedDto
-	last_synced_id i64             @[json: lastSyncedId]
+	last_synced_id i64 @[json: lastSyncedId]
 }
 
-@[middleware: check_auth]
 @['/api/data'; post]
-fn (mut app App) sync_data() vweb.Result {
-	result := sync_data(&app.db, app.user_id, app.req.data) or { return app.message_response(err) }
+fn (mut app App) sync_data(mut ctx Context) veb.Result {
+	result := sync_data(&app.db, ctx.user_id, ctx.req.data) or { return ctx.message_response(err) }
 
-	return app.json(result)
+	return ctx.json(result)
 }
 
 fn sync_data(db &sqlite.DB, user_id int, json_data string) !SyncDataReturnDto {
@@ -53,32 +52,32 @@ fn sync_data(db &sqlite.DB, user_id int, json_data string) !SyncDataReturnDto {
 	validate_sync_data_dto(&data_dto)!
 
 	data_arr := data_dto.data.map(data.SimpleData{
-		key: it.key
+		key:   it.key
 		value: it.data or { '' }
-		id: it.id
+		id:    it.id
 	})
 	d := &data.SyncData{
-		user_id: user_id
-		last_id: data_dto.last_synced_id
+		user_id:       user_id
+		last_id:       data_dto.last_synced_id
 		uploaded_data: data_arr
 	}
 
 	result := data.sync_data(db, d)!
 
 	return SyncDataReturnDto{
-		data: result.new_user_data.map(DataDto{
-			key: it.key
+		data:           result.new_user_data.map(DataDto{
+			key:  it.key
 			data: option(it.value)
-			id: it.id
+			id:   it.id
 		})
-		saved: result.saved.map(SavedDto{
+		saved:          result.saved.map(SavedDto{
 			key: it.key
-			id: it.id
+			id:  it.id
 		})
-		conflicted: result.conflicted_data.map(ConflictedDto{
-			key: it.key
-			data: option(it.value)
-			id: it.id
+		conflicted:     result.conflicted_data.map(ConflictedDto{
+			key:       it.key
+			data:      option(it.value)
+			id:        it.id
 			timestamp: it.timestamp
 		})
 		last_synced_id: result.last_synced_id

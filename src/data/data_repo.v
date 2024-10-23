@@ -4,7 +4,7 @@ import db.sqlite
 
 @[table: 'data']
 struct Data {
-	id        int    @[primary; sql: serial]
+	id        int @[primary; sql: serial]
 	user_id   int
 	key       string
 	value     string @[null]
@@ -36,7 +36,7 @@ fn save_data(db &sqlite.DB, data []Data) ![]Saved {
 		last_id := db.last_insert_rowid()
 		saved << &Saved{
 			key: d.key
-			id: last_id
+			id:  last_id
 		}
 	}
 
@@ -64,9 +64,9 @@ ORDER BY d.id;'
 
 	for i, row in rows {
 		data[i] = SimpleData{
-			key: row.vals[0]
-			value: row.vals[1]
-			id: row.vals[2].int()
+			key:       row.vals[0]
+			value:     row.vals[1]
+			id:        row.vals[2].int()
 			timestamp: row.vals[3]
 		}
 	}

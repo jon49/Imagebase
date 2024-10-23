@@ -8,17 +8,17 @@ import validation
 
 @[table: 'sessions']
 struct Session {
-	id           int       @[primary; sql: serial]
+	id           int @[primary; sql: serial]
 	user_id      int
-	session      string    @[unique]
+	session      string @[unique]
 	created_date time.Time
 }
 
 @[table: 'password_reset']
 struct PasswordReset {
-	id           int       @[primary; sql: serial]
+	id           int @[primary; sql: serial]
 	user_id      int
-	token        string    @[unique]
+	token        string @[unique]
 	created_date time.Time
 }
 
@@ -34,8 +34,8 @@ fn create_session_db(session_db &sqlite.DB) ! {
 fn (mut app App) create_session(user_id int) !Session {
 	uuid := rand.uuid_v4()
 	session := Session{
-		user_id: user_id
-		session: uuid
+		user_id:      user_id
+		session:      uuid
 		created_date: time.utc()
 	}
 
@@ -74,8 +74,8 @@ fn forgot_password(user_db &sqlite.DB, session_db &sqlite.DB, email string) ! {
 	// Create a password reset token
 	uuid := rand.uuid_v4()
 	password_reset := PasswordReset{
-		user_id: user_id
-		token: uuid
+		user_id:      user_id
+		token:        uuid
 		created_date: time.utc()
 	}
 
@@ -127,13 +127,13 @@ fn (mut app App) reset_password(token string, password string, password_confirm 
 	return app.login(email, password)!
 }
 
-fn (mut app App) delete_session() ! {
+fn (mut app App) delete_session(mut ctx Context) ! {
 	mut v := validation.start()
-	v.validate(app.session.len > 0, 'No session available.')
+	v.validate(ctx.session.len > 0, 'No session available.')
 	v.result()!
 
 	sql app.session_db {
-		delete from Session where session == app.session
+		delete from Session where session == ctx.session
 	}!
 }
 
