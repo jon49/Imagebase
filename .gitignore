@@ -1,6 +1,6 @@
 # Binaries for programs and plugins
 main
-SimpleServer
+ImageBase
 *.exe
 *.exe~
 *.so
