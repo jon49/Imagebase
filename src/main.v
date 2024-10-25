@@ -46,6 +46,11 @@ fn main() {
 	veb.run[App, Context](mut app, config.port)
 }
 
+@['/hello'; get]
+fn (mut app App) hello(mut ctx Context) veb.Result {
+	return ctx.text('Hello, World!')
+}
+
 @['/shutdown'; post]
 fn (mut app App) shutdown(mut ctx Context) veb.Result {
 	if app.kill_key.len == 0 {
