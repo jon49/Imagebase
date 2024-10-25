@@ -195,6 +195,18 @@ fn test_should_be_able_to_add_data() {
 
 	assert response3.status() == .ok
 	assert response3.body == '{"data":[{"key":"[1,\\"test-key\\"]","data":"{\\"my\\":\\"data\\",\\"is\\":\\"here\\"}","id":1},{"key":"\\"test-key2\\"","data":"{\\"my\\":\\"data\\",\\"is\\":\\"here\\"}","id":3}],"saved":[],"conflicted":[],"lastSyncedId":3}'
+
+	response4 := http.fetch(http.FetchConfig{
+		url:     '${local_url}/api/data'
+		method:  .post
+		cookies: {
+			'session': session
+		}
+		data:    '{ "lastSyncedId": 3 }'
+	})!
+
+	assert response4.status() == .ok
+	assert response4.body == '{"data":[],"saved":[],"conflicted":[],"lastSyncedId":3}'
 }
 
 fn test_should_be_able_to_logout() {

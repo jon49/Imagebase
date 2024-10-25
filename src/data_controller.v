@@ -80,8 +80,15 @@ fn sync_data(db &sqlite.DB, user_id int, json_data string) !SyncDataReturnDto {
 			id:        it.id
 			timestamp: it.timestamp
 		})
-		last_synced_id: result.last_synced_id
+		last_synced_id: max(result.last_synced_id, data_dto.last_synced_id)
 	}
+}
+
+fn max(a i64, b i64) i64 {
+	if a > b {
+		return a
+	}
+	return b
 }
 
 fn option(value string) ?string {
