@@ -1,6 +1,7 @@
 # Binaries for programs and plugins
 main
 ImageBase
+cookie-jar.tsv
 *.exe
 *.exe~
 *.so
