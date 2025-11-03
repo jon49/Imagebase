@@ -114,19 +114,3 @@ $app_path
 kill $app_pid
 
 cd -
-
-# login
-# run_with_cookies \
-#     ./clean-db.hurl \
-#     ./login-page.tests.hurl \
-#     ./not-logged-in-redirects.tests.hurl
-# login
-# run_with_cookies \
-#     ./category.tests.hurl \
-#     ./transaction.tests.hurl \
-#     ./transaction-htmf.tests.hurl \
-#     ./export.tests.hurl \
-#     ./settings.tests.hurl \
-#     ./logout.tests.hurl
-
-# cd -
