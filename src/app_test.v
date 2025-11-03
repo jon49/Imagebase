@@ -16,7 +16,7 @@ const static_files = os.join_path(app_path, 'static')
 const static_file = os.join_path(static_files, 'index.html')
 const sport = 12382
 const local_url = 'http://localhost:${sport}'
-const serverexe = os.join_path(os.cache_dir(), 'SimpleServer.exe')
+const serverexe = os.join_path(os.cache_dir(), 'ImageBase')
 const cwd = os.getwd()
 const cmd_suffix = '> /dev/null &'
 const kill_key = 'killme'
@@ -51,9 +51,10 @@ fn testsuite_end() {
 }
 
 fn test_created_executable() {
-	did_server_compile := os.system('${os.quoted_path(vexe)} -o ${os.quoted_path(serverexe)} .')
+	did_server_compile := os.system('${os.quoted_path(vexe)} -o ${os.quoted_path(serverexe)} . && echo yellow')
 	assert did_server_compile == 0
-	assert os.exists(serverexe)
+	file_exists := os.exists(serverexe)
+	assert file_exists == true
 }
 
 fn test_starts_server() {
