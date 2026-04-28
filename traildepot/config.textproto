@@ -1,0 +1,19 @@
+# TrailBase configuration. See https://trailbase.io for the full schema.
+#
+# Auth endpoints (register / login / logout / forgot-password / reset-password)
+# are provided by TrailBase itself under /api/auth/v1/*. The custom JS/WASM
+# endpoint for /api/data is registered by the `guests/typescript` component.
+
+email {}
+
+server {
+  application_name: "ImageBase"
+  logs_retention_sec: 604800
+}
+
+auth {
+  auth_token_ttl_sec: 3600
+  refresh_token_ttl_sec: 2592000
+}
+
+jobs {}

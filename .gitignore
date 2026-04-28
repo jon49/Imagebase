@@ -1,0 +1,7 @@
+# Local admin credentials — never commit.
+.env
+
+# WASM guest build outputs.
+guests/typescript/node_modules/
+guests/typescript/dist/
+traildepot/wasm/imagebase_guest.wasm

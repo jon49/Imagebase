@@ -1,0 +1,11 @@
+backups/
+data/
+secrets/
+uploads/
+
+metadata.textproto
+
+trailbase.d.ts
+trailbase.js
+
+*.mmdb
