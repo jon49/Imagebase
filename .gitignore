@@ -2,6 +2,5 @@
 .env
 
 # WASM guest build outputs.
-guests/typescript/node_modules/
-guests/typescript/dist/
+guests/rust/target/
 traildepot/wasm/imagebase_guest.wasm
