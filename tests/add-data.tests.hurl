@@ -2,7 +2,7 @@
 # `{{token}}` being set by the runner after a successful login.
 
 # 1. Initial write: two keys, no existing data.
-POST {{url}}/api/data
+POST {{url}}/api/data/test
 Authorization: Bearer {{token}}
 {
   "lastSyncId": 0,
@@ -24,7 +24,7 @@ jsonpath "$.conflicted" count == 0
 jsonpath "$.lastSyncedId" == 2
 
 # 2. Writing the same key from a stale cursor should conflict.
-POST {{url}}/api/data
+POST {{url}}/api/data/test
 Authorization: Bearer {{token}}
 {
   "lastSyncedId": 1,
@@ -45,7 +45,7 @@ jsonpath "$.conflicted[0].id" == 2
 jsonpath "$.conflicted[0].data" == "{\"my\":\"data2\",\"is\":\"here2\"}"
 
 # 3. Fresh client pulling all user data.
-POST {{url}}/api/data
+POST {{url}}/api/data/test
 Authorization: Bearer {{token}}
 { "lastSyncedId": 0 }
 HTTP 200
@@ -62,7 +62,7 @@ jsonpath "$.saved" count == 0
 jsonpath "$.conflicted" count == 0
 
 # 4. Caught-up client, nothing to return.
-POST {{url}}/api/data
+POST {{url}}/api/data/test
 Authorization: Bearer {{token}}
 { "lastSyncedId": 3 }
 HTTP 200

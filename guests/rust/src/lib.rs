@@ -32,6 +32,14 @@ async fn sync_data(mut req: Request) -> Result<Json<JsonValue>, HttpError> {
         .decode(user_id_b64.as_bytes())
         .map_err(|_| HttpError::message(StatusCode::INTERNAL_SERVER_ERROR, "bad user id"))?;
 
+    // Per-app scoping: the path segment carves out a namespace inside the
+    // shared user_data table so multiple frontends can share one TrailBase.
+    let app = req
+        .path_param("app")
+        .filter(|s| !s.is_empty())
+        .ok_or_else(|| HttpError::message(StatusCode::BAD_REQUEST, "app id is required"))?
+        .to_owned();
+
     let body_bytes = req
         .body()
         .bytes()
@@ -73,9 +81,9 @@ async fn sync_data(mut req: Request) -> Result<Json<JsonValue>, HttpError> {
         .query(
             "WITH duplicates AS (
                SELECT id, key, value, timestamp,
-                      ROW_NUMBER() OVER (PARTITION BY user, key ORDER BY id DESC) AS dup
+                      ROW_NUMBER() OVER (PARTITION BY user, app, key ORDER BY id DESC) AS dup
                FROM user_data
-               WHERE id > $1 AND user = $2
+               WHERE id > $1 AND user = $2 AND app = $3
              )
              SELECT key, value, id, timestamp
              FROM duplicates
@@ -84,6 +92,7 @@ async fn sync_data(mut req: Request) -> Result<Json<JsonValue>, HttpError> {
             &[
                 Value::Integer(body.last_synced_id),
                 Value::Blob(user_id.clone()),
+                Value::Text(app.clone()),
             ],
         )
         .map_err(internal)?;
@@ -139,10 +148,15 @@ async fn sync_data(mut req: Request) -> Result<Json<JsonValue>, HttpError> {
         };
         let inserted = tx
             .query(
-                "INSERT INTO user_data (user, key, value)
-                 VALUES ($1, $2, $3)
+                "INSERT INTO user_data (user, app, key, value)
+                 VALUES ($1, $2, $3, $4)
                  RETURNING id",
-                &[Value::Blob(user_id.clone()), Value::Text(key.clone()), value],
+                &[
+                    Value::Blob(user_id.clone()),
+                    Value::Text(app.clone()),
+                    Value::Text(key.clone()),
+                    value,
+                ],
             )
             .map_err(internal)?;
         let id = match inserted.first().and_then(|r| r.first()) {
@@ -177,7 +191,7 @@ struct GuestImpl;
 
 impl Guest for GuestImpl {
     fn http_handlers() -> Vec<HttpRoute> {
-        vec![routing::post("/api/data", sync_data)]
+        vec![routing::post("/api/data/{app}", sync_data)]
     }
 }
 
