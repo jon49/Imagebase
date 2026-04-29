@@ -1,15 +1,16 @@
-# NewImageBase
+# ImageBase
 
-A port of [ImageBase](../ImageBase) from V/`veb` to
-[TrailBase](https://trailbase.io). The custom sync endpoint preserves the
-original CRDT (last-write-wins) semantics; everything authentication-shaped
-is delegated to TrailBase. The custom code is a Rust → `wasm32-wasip2`
-component, which keeps the trail process at ~63 MB RSS even under load.
+A major architectural rewrite of ImageBase, moving off V/`veb` and onto
+[TrailBase](https://trailbase.io) for the underlying framework. The custom
+sync endpoint preserves the original CRDT (last-write-wins) semantics;
+everything authentication-shaped is delegated to TrailBase. The custom
+code is a Rust → `wasm32-wasip2` component, which keeps the trail process
+at ~63 MB RSS even under load.
 
 ## Layout
 
 ```
-NewImageBase/
+ImageBase/
 ├── Makefile                            # build + run helpers
 ├── traildepot/
 │   ├── config.textproto                # TrailBase server config
