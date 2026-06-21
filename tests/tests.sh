@@ -1,18 +1,30 @@
 #!/usr/bin/env bash
-# Integration tests for NewImageBase. Spawns its own short-lived `trail` so
-# every run starts with empty in-memory rate-limit state and `--dev`-mode
-# stderr captured to a temp file (used to auto-extract the password-reset
-# JWT for create-new-password).
+# Integration tests for ImageBase. Spawns its own short-lived `trail` on a free
+# port so every run starts with empty in-memory rate-limit state and `--dev`-mode
+# stderr captured to a temp file (used to auto-extract the password-reset JWT for
+# create-new-password).
 #
-# Picks a free port to avoid clashing with a long-running `make dev`. Both
-# servers share the same data dir; SQLite multi-process locking handles it.
+# By default it runs against an isolated, throwaway data dir seeded from the
+# project depot, so autoincrement ids start clean (several tests assert exact
+# ids) and real dev data is never read or written. Set DATA_DIR to point the
+# tests at an existing depot instead.
 
 set -euo pipefail
 
 ENV_FILE="${ENV_FILE:-local.env}"
-DATA_DIR="${DATA_DIR:-../traildepot}"
+SRC_DEPOT="${SRC_DEPOT:-../traildepot}"
 
 cd "$(dirname "$0")"
+
+if [ -n "${DATA_DIR:-}" ]; then
+    OWN_DATA_DIR=0
+else
+    DATA_DIR="$(mktemp -d)"
+    OWN_DATA_DIR=1
+    cp "$SRC_DEPOT/config.textproto" "$DATA_DIR/"
+    cp -r "$SRC_DEPOT/migrations" "$DATA_DIR/"
+    mkdir -p "$DATA_DIR/wasm"
+fi
 
 email=$(grep '^email=' "$ENV_FILE" | cut -d= -f2-)
 
@@ -27,11 +39,19 @@ cleanup() {
         wait "$SERVER_PID" 2>/dev/null || true
     fi
     rm -f "$LOG_FILE"
+    if [ "${OWN_DATA_DIR:-0}" = 1 ]; then
+        rm -rf "$DATA_DIR"
+    fi
 }
 trap cleanup EXIT
 
 echo "--- building wasm guest ---"
 (cd .. && make deploy >/dev/null)
+# make deploy copies the freshly built wasm into the source depot; mirror it
+# into the isolated data dir the test server actually runs against.
+if [ "$OWN_DATA_DIR" = 1 ]; then
+    cp "$SRC_DEPOT/wasm/imagebase_guest.wasm" "$DATA_DIR/wasm/"
+fi
 
 echo "--- starting trail on $TEST_URL ---"
 trail --data-dir="$DATA_DIR" run --address="localhost:$TEST_PORT" --dev --stderr-logging \
@@ -98,6 +118,49 @@ sqlite3 "$DATA_DIR/data/main.db" \
 echo "--- sync tests ---"
 run_hurl --variable "token=$token" add-data.tests.hurl
 run_hurl --variable "token=$token" validation.tests.hurl
+
+echo "--- prune job: seed overwrite history under app=prune ---"
+run_hurl --variable "token=$token" prune-seed.tests.hurl
+
+# Age the older "old" row (every non-latest row for that key) past the one-month
+# retention window so the prune job becomes eligible to delete it. "recent" rows
+# are left untouched and must survive.
+echo "--- prune job: age the overwritten 'old' row past retention ---"
+sqlite3 "$DATA_DIR/data/main.db" "
+    UPDATE user_data
+       SET timestamp = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 months')
+     WHERE app = 'prune' AND key = '\"old\"'
+       AND id < (SELECT MAX(id) FROM user_data WHERE app = 'prune' AND key = '\"old\"');"
+
+before=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE app = 'prune';")
+echo "rows under app=prune before prune: $before (expect 4)"
+
+# The admin job API requires an admin user + matching CSRF token. Promote the
+# canonical test user, then log in fresh so the token carries admin rights and
+# we capture the CSRF token that pairs with it.
+echo "--- prune job: promote test user to admin ---"
+sqlite3 "$DATA_DIR/data/main.db" "UPDATE _user SET admin = 1 WHERE email = '$email';"
+
+login_json=$(hurl --variables-file "$ENV_FILE" --variable "url=$TEST_URL" login.hurl)
+admin_token=$(echo "$login_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["auth_token"])')
+admin_csrf=$(echo "$login_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["csrf_token"])')
+
+echo "--- prune job: trigger on demand via admin API ---"
+run_hurl --variable "token=$admin_token" --variable "csrf=$admin_csrf" prune-run.tests.hurl
+
+after=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE app = 'prune';")
+old_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE app = 'prune' AND key = '\"old\"';")
+recent_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE app = 'prune' AND key = '\"recent\"';")
+echo "rows under app=prune after prune: $after (expect 3)"
+
+# The aged "old" overwrite must be gone (key keeps only its latest), while both
+# "recent" rows survive because they're inside the retention window.
+if [ "$after" != "3" ] || [ "$old_left" != "1" ] || [ "$recent_left" != "2" ]; then
+    echo "FAIL: prune left app=prune in an unexpected state" \
+         "(total=$after old=$old_left recent=$recent_left; expected 3/1/2)"
+    exit 1
+fi
+echo "prune assertions passed (deleted the aged overwrite, kept latest + recent)"
 
 echo "--- logout flow ---"
 run_hurl logout.tests.hurl

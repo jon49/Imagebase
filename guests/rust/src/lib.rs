@@ -4,8 +4,9 @@ use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use serde::Deserialize;
 use serde_json::{Value as JsonValue, json};
 use trailbase_wasm::Guest;
-use trailbase_wasm::db::{Transaction, Value};
+use trailbase_wasm::db::{self, Transaction, Value};
 use trailbase_wasm::http::{HttpError, HttpRoute, Json, Request, StatusCode, routing};
+use trailbase_wasm::job::Job;
 
 #[derive(Deserialize, Default)]
 struct IncomingItem {
@@ -183,6 +184,41 @@ async fn sync_data(mut req: Request) -> Result<Json<JsonValue>, HttpError> {
     })))
 }
 
+// How long an overwritten row is kept before the nightly prune may delete it.
+// SQLite modifier applied to `now`; rows whose timestamp is older than this are
+// eligible. The latest write per (user, app, key) is never pruned.
+const RETENTION_MODIFIER: &str = "-1 month";
+
+// Nightly maintenance: drop rows that have been superseded by a newer write for
+// the same (user, app, key) AND are older than the retention window. user_data
+// is append-only, so without this the table grows unbounded with stale history.
+//
+// The `ROW_NUMBER() OVER (PARTITION BY user, app, key ORDER BY id DESC)` window
+// mirrors the "latest value per key" derivation in `sync_data`: dup = 1 is the
+// current value (always kept); dup > 1 are overwrites. Recent overwrites stay
+// reconcilable because only those older than RETENTION_MODIFIER are removed.
+async fn prune_overwritten_data() -> Result<String, HttpError> {
+    let cutoff = format!("strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '{RETENTION_MODIFIER}')");
+    let deleted = db::execute(
+        format!(
+            "DELETE FROM user_data
+             WHERE id IN (
+               SELECT id FROM (
+                 SELECT id, timestamp,
+                        ROW_NUMBER() OVER (PARTITION BY user, app, key ORDER BY id DESC) AS dup
+                 FROM user_data
+               )
+               WHERE dup > 1 AND timestamp < {cutoff}
+             )"
+        ),
+        Vec::<Value>::new(),
+    )
+    .await
+    .map_err(internal)?;
+
+    Ok(format!("pruned {deleted} overwritten row(s)"))
+}
+
 fn internal<E: std::fmt::Display>(e: E) -> HttpError {
     HttpError::message(StatusCode::INTERNAL_SERVER_ERROR, format!("{e}"))
 }
@@ -192,6 +228,14 @@ struct GuestImpl;
 impl Guest for GuestImpl {
     fn http_handlers() -> Vec<HttpRoute> {
         vec![routing::post("/api/data/{app}", sync_data)]
+    }
+
+    fn job_handlers() -> Vec<Job> {
+        // Cron spec is "sec min hour day month weekday": 03:30 every night.
+        vec![
+            Job::new("prune_overwritten_data", "0 30 3 * * *", prune_overwritten_data)
+                .expect("valid cron spec"),
+        ]
     }
 }
 

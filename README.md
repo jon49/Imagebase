@@ -145,4 +145,13 @@ from `--dev` stderr):
 ./tasks/test.sh
 ```
 
-The test app id is `test`; routes hit are `POST /api/data/test`.
+By default the runner uses an isolated, throwaway data dir seeded from the
+project depot (`config.textproto` + `migrations/` + the freshly built
+wasm), so autoincrement ids start clean — several tests assert exact row
+ids — and real dev data is never read or written. It's removed on exit.
+Set `DATA_DIR` to run against an existing depot instead, e.g.
+`DATA_DIR=../traildepot ./tasks/test.sh`.
+
+The test app id is `test`; routes hit are `POST /api/data/test`. The
+prune-job tests use a separate `prune` app id and trigger the nightly
+`prune_overwritten_data` cron job on demand via TrailBase's admin API.
