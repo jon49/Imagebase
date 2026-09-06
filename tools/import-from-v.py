@@ -46,6 +46,15 @@ def stub_check_funcs(conn: sqlite3.Connection) -> None:
     conn.create_function("is_email", 1, lambda _x: 1)
 
 
+def as_text(v):
+    """V stored some `data.value` rows with BLOB storage class even though
+    the column was declared TEXT (sqlite's loose affinity let this slip).
+    TrailBase's `user_data.value` is STRICT TEXT and rejects BLOB binds,
+    so coerce bytes → str. The original payloads are JSON text per the V
+    server's @[raw] handling, so UTF-8 decode is lossless."""
+    return v.decode("utf-8") if isinstance(v, bytes) else v
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     p.add_argument("--old-db", required=True,
@@ -112,7 +121,8 @@ def main() -> int:
             new.executemany(
                 "INSERT INTO user_data (user, app, key, value, timestamp) "
                 "VALUES (?, ?, ?, ?, ?)",
-                [(user_map[r["user_id"]], args.app, r["key"], r["value"],
+                [(user_map[r["user_id"]], args.app,
+                  as_text(r["key"]), as_text(r["value"]),
                   r["timestamp"]) for r in data_rows],
             )
 
