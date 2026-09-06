@@ -46,7 +46,9 @@ the Makefile.
 ## Architecture
 
 - **`guests/rust/src/lib.rs`** — the entire custom backend. Implements the `trailbase_wasm::Guest`
-  trait, exporting one route: `POST /api/data/{app}` → `sync_data`. Build artifact lands at
+  trait, exporting two routes: `POST /api/data/{app}` → `sync_data` (the CRDT sync protocol) and
+  `GET /api/pages/{app}/{id}` → `serve_page` (public, unauthenticated read of a published HTML
+  page — see below). Build artifact lands at
   `guests/rust/target/wasm32-wasip2/release/imagebase_guest.wasm` and is copied to
   `traildepot/wasm/imagebase_guest.wasm` (gitignored) by `make deploy`.
 
@@ -82,6 +84,27 @@ the Makefile.
 
 - TrailBase auth endpoints live under `/api/auth/v1/*` (register/login/logout/reset_password). See
   the README table mapping old V `/api/authentication/*` routes to their TrailBase equivalents.
+
+### Publishing HTML pages
+
+- **Writes are pure TrailBase config, not guest code.** The `pages` table (migration
+  `U1788733600`) has a `html TEXT CHECK(jsonschema('std.FileUpload', html))` column; the
+  `pages` `record_apis` entry in `config.textproto` exposes create/update/delete only.
+  `id` is a client-supplied UUID stored as a `BLOB CHECK(is_uuid(id))` PK (the Record API
+  rejects TEXT PKs; it parses the hyphenated string to bytes on write).
+- **Owner-gated.** `app_owners(app PK, owner → _user)` is the owner registry; the
+  create/update/delete access rules are `EXISTS(SELECT 1 FROM app_owners WHERE app = _REQ_.app
+  AND owner = _USER_.id)`. Populate `app_owners` out of band (admin UI / SQL). No per-row user
+  column on `pages`.
+- **Reads are the only custom code.** `serve_page` (`GET /api/pages/{app}/{id}`, no auth) looks
+  up the row, pulls the object-store id out of the `std.FileUpload` JSON, and
+  `fs::read_file`s the bytes, returning them as `text/html` **inline**. This exists solely
+  because the Record API's file endpoint hardcodes `Content-Disposition: attachment`.
+- **The guest needs the object store mounted.** `make dev`/`make run` and `tests/tests.sh` pass
+  `trail run --runtime-root-fs=<data-dir>/uploads`. That WASI preopen is **read-only** (and the
+  guest has no env vars / no raw sockets), so the guest can read uploads but cannot write files
+  anywhere — writes must stay on the Record API path. Keep the mount scoped to `uploads/`, never
+  the whole depot (`secrets/`).
 
 ## Conventions
 

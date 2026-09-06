@@ -5,7 +5,10 @@ use serde::Deserialize;
 use serde_json::{Value as JsonValue, json};
 use trailbase_wasm::Guest;
 use trailbase_wasm::db::{self, Transaction, Value};
-use trailbase_wasm::http::{HttpError, HttpRoute, Json, Request, StatusCode, routing};
+use trailbase_wasm::fs;
+use trailbase_wasm::http::{
+    HeaderValue, HttpError, HttpRoute, IntoBody, Json, Request, Response, StatusCode, header, routing,
+};
 use trailbase_wasm::job::Job;
 
 #[derive(Deserialize, Default)]
@@ -184,6 +187,100 @@ async fn sync_data(mut req: Request) -> Result<Json<JsonValue>, HttpError> {
     })))
 }
 
+// Public, unauthenticated read of a page published via the `pages` Record API.
+//
+// The Record API stores only file metadata in `pages.html`; the bytes live in the
+// object store. We can't use the Record API's own file endpoint because it forces
+// `Content-Disposition: attachment` (browsers download instead of render), so we
+// read the file straight off the object store — mounted read-only at the WASM FS
+// root via `trail run --runtime-root-fs=<data-dir>/uploads` — and stream it back
+// inline as `text/html`.
+async fn serve_page(req: Request) -> Response {
+    let app = match req.path_param("app").filter(|s| !s.is_empty()) {
+        Some(a) => a.to_owned(),
+        None => return text_response(StatusCode::BAD_REQUEST, "app id is required"),
+    };
+    let id = match req.path_param("id").filter(|s| !s.is_empty()) {
+        Some(i) => i.to_owned(),
+        None => return text_response(StatusCode::BAD_REQUEST, "page id is required"),
+    };
+    // `pages.id` is a 16-byte blob (see the migration); the client hands us the
+    // canonical hyphenated form in the URL.
+    let id_bytes = match parse_uuid(&id) {
+        Some(bytes) => bytes,
+        None => return text_response(StatusCode::BAD_REQUEST, "page id must be a UUID"),
+    };
+
+    let rows = match db::query(
+        "SELECT html FROM pages WHERE app = $1 AND id = $2",
+        &[Value::Text(app), Value::Blob(id_bytes)],
+    )
+    .await
+    {
+        Ok(rows) => rows,
+        Err(e) => return text_response(StatusCode::INTERNAL_SERVER_ERROR, &format!("{e}")),
+    };
+
+    let meta = match rows.first().and_then(|r| r.first()) {
+        Some(Value::Text(s)) => s.as_str(),
+        _ => return text_response(StatusCode::NOT_FOUND, "no such page"),
+    };
+
+    // `std.FileUpload` metadata: `{ "id": "<objectstore uuid>", ... }`. The object
+    // store keys files by that uuid, flat under the uploads root.
+    let object_id = serde_json::from_str::<JsonValue>(meta)
+        .ok()
+        .as_ref()
+        .and_then(|v| v.get("id"))
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty() && s.bytes().all(|b| b.is_ascii_alphanumeric() || b == b'-'))
+        .map(|s| s.to_owned());
+    let object_id = match object_id {
+        Some(s) => s,
+        None => {
+            return text_response(StatusCode::INTERNAL_SERVER_ERROR, "malformed page file metadata");
+        }
+    };
+
+    let bytes = match fs::read_file(format!("/{object_id}")) {
+        Ok(bytes) => bytes,
+        Err(_) => return text_response(StatusCode::NOT_FOUND, "page file not found"),
+    };
+
+    let mut resp = Response::new(bytes.into_body());
+    resp.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/html; charset=utf-8"),
+    );
+    resp
+}
+
+// Parse a canonical UUID string ("xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx", dashes
+// optional) into its 16 raw bytes. No uuid crate — keeps the guest binary lean.
+fn parse_uuid(s: &str) -> Option<Vec<u8>> {
+    let hex: Vec<u8> = s.bytes().filter(|b| *b != b'-').collect();
+    if hex.len() != 32 || !hex.iter().all(u8::is_ascii_hexdigit) {
+        return None;
+    }
+    let mut out = Vec::with_capacity(16);
+    for pair in hex.chunks_exact(2) {
+        let hi = (pair[0] as char).to_digit(16)?;
+        let lo = (pair[1] as char).to_digit(16)?;
+        out.push(((hi << 4) | lo) as u8);
+    }
+    Some(out)
+}
+
+fn text_response(status: StatusCode, body: &str) -> Response {
+    let mut resp = Response::new(body.to_owned().into_body());
+    *resp.status_mut() = status;
+    resp.headers_mut().insert(
+        header::CONTENT_TYPE,
+        HeaderValue::from_static("text/plain; charset=utf-8"),
+    );
+    resp
+}
+
 // How long an overwritten row is kept before the nightly prune may delete it.
 // SQLite modifier applied to `now`; rows whose timestamp is older than this are
 // eligible. The latest write per (user, app, key) is never pruned.
@@ -227,7 +324,10 @@ struct GuestImpl;
 
 impl Guest for GuestImpl {
     fn http_handlers() -> Vec<HttpRoute> {
-        vec![routing::post("/api/data/{app}", sync_data)]
+        vec![
+            routing::post("/api/data/{app}", sync_data),
+            routing::get("/api/pages/{app}/{id}", serve_page),
+        ]
     }
 
     fn job_handlers() -> Vec<Job> {

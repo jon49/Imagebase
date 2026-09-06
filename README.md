@@ -74,6 +74,101 @@ Response:
 whatever the client sent, matching the V server's `@[raw]` behaviour so
 existing clients do not need to change their wire format.
 
+## Publishing HTML pages
+
+An app can upload an HTML file and serve it at a stable, public URL. Uploads are
+stored via TrailBase's Record API + a `std.FileUpload` column (`pages` table):
+the bytes go to the object store, only metadata to SQLite. Public reads go
+through the custom guest route `GET /api/pages/{app}/{id}`, which streams the
+file back as `text/html` **inline** so a browser renders it (the Record API's
+own file endpoint forces `Content-Disposition: attachment`).
+
+### Endpoints
+
+| Action   | Method & path                                   | Auth                |
+| -------- | ----------------------------------------------- | ------------------- |
+| Publish  | `POST /api/records/v1/pages`                    | Bearer, app owner   |
+| Overwrite| `POST /api/records/v1/pages` (same `id`)        | Bearer, app owner   |
+| Delete   | `DELETE /api/records/v1/pages/{id}`             | Bearer, app owner   |
+| Read     | `GET /api/pages/{app}/{id}`                     | none (public)       |
+
+`{app}` is a stable per-frontend id you pick (e.g. `soccer`). `{id}` is a
+UUID/GUID **your client generates and owns** — it's the page's permanent
+address. Send it in canonical hyphenated form (`xxxxxxxx-xxxx-xxxx-xxxx-xxxxxxxxxxxx`)
+everywhere: in the `id` field on write, and in the URL path on read.
+
+### One-time setup: register the app owner
+
+Only the single `_user` mapped to an `app` in the `app_owners` table may write
+pages for it. Everyone else (and anyone unauthenticated) gets `403`. Register it
+once — admin UI, or SQL against `traildepot/data/main.db`:
+
+```sql
+INSERT INTO app_owners (app, owner)
+VALUES ('soccer', (SELECT id FROM _user WHERE email = 'owner@example.com'));
+```
+
+The owner authenticates like any TrailBase user — `POST /api/auth/v1/login`
+with `{ "email", "password" }` returns `{ "auth_token", "refresh_token", ... }`;
+use `auth_token` as `Authorization: Bearer <auth_token>`.
+
+### Publish / overwrite
+
+`Content-Type: application/json`, body:
+
+```json
+{
+  "id":  "3f1a2b3c-0000-4000-8000-000000000001",
+  "app": "soccer",
+  "html": {
+    "filename": "standings.html",
+    "content_type": "text/html",
+    "data": "<base64 of the file bytes>"
+  }
+}
+```
+
+`data` accepts standard or URL-safe base64 (what `base64 -w0 file.html` emits is
+fine). `multipart/form-data` also works (field name `html`). On success: `200`
+with `{ "ids": ["<base64 id>"] }` — you can ignore the response, you already
+know the id.
+
+Overwrite is the exact same call with the same `id` (the API uses `REPLACE`
+conflict resolution); the previous file is garbage-collected. `PATCH
+/api/records/v1/pages/{id}` with just `{ "html": { ... } }` also works.
+
+```sh
+curl -X POST http://localhost:4000/api/records/v1/pages \
+  -H "Authorization: Bearer $AUTH_TOKEN" \
+  -H 'Content-Type: application/json' \
+  -d '{
+        "id": "3f1a2b3c-0000-4000-8000-000000000001",
+        "app": "soccer",
+        "html": { "filename": "standings.html", "content_type": "text/html",
+                  "data": "'"$(base64 -w0 standings.html)"'" }
+      }'
+```
+
+### Read
+
+```
+GET http://<host>/api/pages/soccer/3f1a2b3c-0000-4000-8000-000000000001
+```
+
+`200` → `Content-Type: text/html; charset=utf-8`, no `Content-Disposition`, body
+is the exact bytes uploaded. `404` (text/plain) if the app/id pair is unknown or
+the file is missing; `400` if `{id}` isn't a UUID.
+
+### Storage location / ops note
+
+Object store defaults to `<data-dir>/uploads/`; relocate by moving the data dir
+(`DATA_DIR` env / `--data-dir`), or point at an S3 bucket via
+`server.s3_storage_config` in `config.textproto`. For the public read route to
+work, `trail` must run with `--runtime-root-fs=<data-dir>/uploads` (the `make
+dev` / `make run` targets do this) — only `uploads/` is mounted into the guest,
+read-only. An S3-backed store can't be read this way; you'd serve pages by
+another means.
+
 ## What happened to the V routes?
 
 The V server shipped hand-written auth under `/api/authentication/*`. On

@@ -1,19 +1,26 @@
-# TrailBase configuration. See https://trailbase.io for the full schema.
-#
-# Auth endpoints (register / login / logout / forgot-password / reset-password)
-# are provided by TrailBase itself under /api/auth/v1/*. The custom JS/WASM
-# endpoint for /api/data is registered by the `guests/typescript` component.
-
+# Auto-generated config.Config textproto
 email {}
-
 server {
   application_name: "ImageBase"
   logs_retention_sec: 604800
 }
-
 auth {
   auth_token_ttl_sec: 3600
   refresh_token_ttl_sec: 2592000
 }
-
 jobs {}
+# Publishable HTML pages. Write-only over the Record API: only the auth token of
+# the user registered in `app_owners` for the row's `app` may create/update/delete.
+# Public reads go through the custom guest route `GET /api/pages/{app}/{id}`.
+# REPLACE conflict resolution: re-POSTing the same client-supplied `id` overwrites.
+record_apis: [
+  {
+    name: "pages"
+    table_name: "pages"
+    conflict_resolution: REPLACE
+    acl_authenticated: [CREATE, UPDATE, DELETE]
+    create_access_rule: "EXISTS(SELECT 1 FROM app_owners WHERE app = _REQ_.app AND owner = _USER_.id)"
+    update_access_rule: "EXISTS(SELECT 1 FROM app_owners WHERE app = _ROW_.app AND owner = _USER_.id)"
+    delete_access_rule: "EXISTS(SELECT 1 FROM app_owners WHERE app = _ROW_.app AND owner = _USER_.id)"
+  }
+]

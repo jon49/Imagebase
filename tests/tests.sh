@@ -53,8 +53,13 @@ if [ "$OWN_DATA_DIR" = 1 ]; then
     cp "$SRC_DEPOT/wasm/imagebase_guest.wasm" "$DATA_DIR/wasm/"
 fi
 
+# The guest reads published page files straight off the object store, which trail
+# mounts read-only at the WASM FS root. The dir must exist before trail starts.
+mkdir -p "$DATA_DIR/uploads"
+
 echo "--- starting trail on $TEST_URL ---"
 trail --data-dir="$DATA_DIR" run --address="localhost:$TEST_PORT" --dev --stderr-logging \
+    --runtime-root-fs="$DATA_DIR/uploads" \
     >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 
@@ -118,6 +123,15 @@ sqlite3 "$DATA_DIR/data/main.db" \
 echo "--- sync tests ---"
 run_hurl --variable "token=$token" add-data.tests.hurl
 run_hurl --variable "token=$token" validation.tests.hurl
+
+echo "--- publish page: register test user as owner of app=pages-test ---"
+sqlite3 "$DATA_DIR/data/main.db" \
+    "INSERT INTO app_owners (app, owner) \
+     VALUES ('pages-test', (SELECT id FROM _user WHERE email = '$email')) \
+     ON CONFLICT(app) DO NOTHING;"
+
+echo "--- publish page: create / fetch inline / overwrite / authz ---"
+run_hurl --variable "token=$token" publish-page.tests.hurl
 
 echo "--- prune job: seed overwrite history under app=prune ---"
 run_hurl --variable "token=$token" prune-seed.tests.hurl
