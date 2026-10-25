@@ -133,6 +133,52 @@ sqlite3 "$DATA_DIR/data/main.db" \
 echo "--- publish page: create / fetch inline / overwrite / authz ---"
 run_hurl --variable "token=$token" publish-page.tests.hurl
 
+echo "--- spaces: register + verify + log in a second user ---"
+email_b=$(grep '^email_b=' "$ENV_FILE" | cut -d= -f2-)
+password=$(grep '^password=' "$ENV_FILE" | cut -d= -f2-)
+curl -s -o /dev/null -X POST "$TEST_URL/api/auth/v1/register" \
+    -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$email_b\",\"password\":\"$password\",\"password_repeat\":\"$password\"}"
+sqlite3 "$DATA_DIR/data/main.db" "UPDATE _user SET verified = 1 WHERE email = '$email_b';"
+token_b=$(curl -sf -X POST "$TEST_URL/api/auth/v1/login" \
+    -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$email_b\",\"password\":\"$password\"}" \
+    | python3 -c 'import json,sys;print(json.load(sys.stdin)["auth_token"])')
+
+echo "--- spaces: seed spaces + memberships ---"
+sqlite3 "$DATA_DIR/data/main.db" "
+    INSERT INTO spaces (id, app) VALUES
+      (X'55555555555555555555555555555555', 'spaces-test'),
+      (X'66666666666666666666666666666666', 'spaces-test'),
+      (X'77777777777777777777777777777777', 'other-app');
+    INSERT INTO space_members (space, user)
+      SELECT X'55555555555555555555555555555555', id FROM _user WHERE email IN ('$email', '$email_b')
+      UNION ALL SELECT X'66666666666666666666666666666666', id FROM _user WHERE email = '$email'
+      UNION ALL SELECT X'77777777777777777777777777777777', id FROM _user WHERE email IN ('$email', '$email_b');"
+
+echo "--- spaces: shared sync + space-member page publishing ---"
+run_hurl --variable "token=$token" --variable "token_b=$token_b" spaces.tests.hurl
+
+# Deleting a member must drop their personal rows and memberships but keep what
+# they wrote into a shared space (authorless), so the other members' data
+# doesn't roll back to older values.
+echo "--- spaces: delete the second user ---"
+b_space_rows=$(sqlite3 "$DATA_DIR/data/main.db" "
+    SELECT COUNT(*) FROM user_data
+     WHERE space IS NOT NULL AND user = (SELECT id FROM _user WHERE email = '$email_b');")
+# Via `trail`, not sqlite3: the FK actions touch tables whose CHECKs call
+# TrailBase-only SQL functions (`is_uuid`, ...) the stock CLI doesn't have.
+trail --data-dir="$DATA_DIR" user delete "$email_b" >/dev/null 2>&1
+orphaned=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE user IS NULL AND space IS NOT NULL;")
+personal_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE value = '{\"b\":\"personal\"}';")
+s1_members=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM space_members WHERE space = X'55555555555555555555555555555555';")
+if [ "$b_space_rows" = "0" ] || [ "$orphaned" != "$b_space_rows" ] || [ "$personal_left" != "0" ] || [ "$s1_members" != "1" ]; then
+    echo "FAIL: user delete left spaces in an unexpected state" \
+         "(b_space_rows=$b_space_rows orphaned=$orphaned personal_left=$personal_left s1_members=$s1_members)"
+    exit 1
+fi
+echo "user-delete assertions passed (kept $orphaned shared row(s), dropped personal rows + membership)"
+
 echo "--- prune job: seed overwrite history under app=prune ---"
 run_hurl --variable "token=$token" prune-seed.tests.hurl
 

@@ -82,6 +82,15 @@ the Makefile.
   inserted, `lastSyncedId` = max of the incoming cursor and any ids seen/written. All writes happen
   in a single `Transaction`.
 
+- **Shared spaces** (migration `U1792800000`). A row is either personal (`space IS NULL`, scoped by
+  `user`) or belongs to a `spaces` row whose `space_members` all read/write it as equals; for space
+  rows `user` is just the author. Items opt in with `"space": "<uuid>"`; non-members get 403 for the
+  whole batch. `lastSyncedId` covers personal rows only; `spaces: {uuid: cursor}` in the request
+  carries per-space cursors (an omitted member space starts at 0) and the response returns one for
+  every space the caller is in. Space rows in `data`/`saved`/`conflicted` carry `space`; personal
+  rows don't, so pre-spaces clients see the old wire format. Membership is seeded out of band for
+  now (like `app_owners`). Space members may also publish `pages` with `space` set.
+
 - TrailBase auth endpoints live under `/api/auth/v1/*` (register/login/logout/reset_password). See
   the README table mapping old V `/api/authentication/*` routes to their TrailBase equivalents.
 
@@ -109,6 +118,7 @@ the Makefile.
 ## Conventions
 
 - Migrations are immutable once applied; add a new `U<timestamp>__*.sql` rather than editing an
-  existing one. Tables use `STRICT`. `user_data.user` cascade-deletes with `_user`.
+  existing one. Tables use `STRICT`. Deleting a `_user` deletes their personal `user_data` rows
+  (trigger) but only nulls `user` on their space rows, so shared data never rolls back.
 - The guest release profile is size-tuned (`opt-level = "s"`, `lto`, `strip`); keep it lean —
   binary size affects the ~63 MB RSS target called out in the README.

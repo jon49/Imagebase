@@ -1,4 +1,4 @@
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 
 use base64::{Engine as _, engine::general_purpose::URL_SAFE};
 use serde::Deserialize;
@@ -16,14 +16,30 @@ struct IncomingItem {
     key: JsonValue,
     #[serde(default)]
     data: Option<JsonValue>,
+    // UUID of the shared space this row belongs to; absent = the caller's own data.
+    #[serde(default)]
+    space: Option<String>,
 }
 
 #[derive(Deserialize, Default)]
 struct SyncRequest {
+    // Cursor for the caller's personal rows only.
     #[serde(default, rename = "lastSyncedId", alias = "lastSyncId")]
     last_synced_id: i64,
+    // Per-space cursors keyed by space UUID. A space the caller belongs to but
+    // omits here starts at 0, so a newly joined space pulls its whole history.
+    #[serde(default)]
+    spaces: HashMap<String, i64>,
     #[serde(default)]
     data: Vec<IncomingItem>,
+}
+
+// Which slice of `user_data` a row lives in. Personal rows are scoped by user,
+// shared rows by space; the two never mix in one "latest per key" window.
+#[derive(Clone, PartialEq, Eq, Hash)]
+enum Scope {
+    Personal,
+    Space(Vec<u8>),
 }
 
 async fn sync_data(mut req: Request) -> Result<Json<JsonValue>, HttpError> {
@@ -77,38 +93,194 @@ async fn sync_data(mut req: Request) -> Result<Json<JsonValue>, HttpError> {
         }
     }
 
+    // Spaces the caller belongs to for this app, in a stable order for the
+    // response. Membership is checked before the transaction so a rejected
+    // batch never starts one.
+    let member_rows = db::query(
+        "SELECT m.space FROM space_members m JOIN spaces s ON s.id = m.space
+         WHERE m.user = $1 AND s.app = $2
+         ORDER BY s.created, m.space",
+        &[Value::Blob(user_id.clone()), Value::Text(app.clone())],
+    )
+    .await
+    .map_err(internal)?;
+    let member_spaces: Vec<Vec<u8>> = member_rows
+        .iter()
+        .filter_map(|row| match row.first() {
+            Some(Value::Blob(b)) => Some(b.clone()),
+            _ => None,
+        })
+        .collect();
+
+    let mut item_scopes = Vec::with_capacity(body.data.len());
+    for (i, item) in body.data.iter().enumerate() {
+        let scope = match &item.space {
+            None => Scope::Personal,
+            Some(s) => {
+                let id = parse_uuid(s).ok_or_else(|| {
+                    HttpError::message(
+                        StatusCode::BAD_REQUEST,
+                        format!("Key [{i}] has an invalid space id \"{s}\"."),
+                    )
+                })?;
+                if !member_spaces.contains(&id) {
+                    return Err(HttpError::message(
+                        StatusCode::FORBIDDEN,
+                        format!("Not a member of space \"{s}\"."),
+                    ));
+                }
+                Scope::Space(id)
+            }
+        };
+        item_scopes.push(scope);
+    }
+
+    let mut space_cursors: HashMap<Vec<u8>, i64> = HashMap::new();
+    for (s, cursor) in &body.spaces {
+        let id = parse_uuid(s).ok_or_else(|| {
+            HttpError::message(StatusCode::BAD_REQUEST, format!("Invalid space id \"{s}\"."))
+        })?;
+        if *cursor < 0 {
+            return Err(HttpError::message(
+                StatusCode::BAD_REQUEST,
+                format!("Cursor for space \"{s}\" must be whole number but is \"{cursor}\"."),
+            ));
+        }
+        // Cursors for spaces the caller has left are ignored; the space's absence
+        // from the response's `spaces` tells the client to drop it.
+        space_cursors.insert(id, *cursor);
+    }
+
+    let uploaded_keys: HashSet<(Scope, String)> = body
+        .data
+        .iter()
+        .zip(&item_scopes)
+        .map(|(item, scope)| {
+            (scope.clone(), serde_json::to_string(&item.key).unwrap_or_default())
+        })
+        .collect();
+
     let mut tx = Transaction::begin().map_err(internal)?;
 
-    // Rows written by any client since the cursor, deduplicated by key keeping
-    // the most recent write. Mirrors the original V/TS implementation.
+    let mut data = Vec::new();
+    let mut conflicted = Vec::new();
+    let mut cursors: Vec<(Scope, i64)> = Vec::with_capacity(member_spaces.len() + 1);
+    cursors.push((Scope::Personal, body.last_synced_id));
+    for space in &member_spaces {
+        let cursor = space_cursors.get(space).copied().unwrap_or(0);
+        cursors.push((Scope::Space(space.clone()), cursor));
+    }
+    for (scope, cursor) in cursors.iter_mut() {
+        let max_latest = pull(
+            &mut tx,
+            &user_id,
+            &app,
+            scope,
+            *cursor,
+            &uploaded_keys,
+            &mut data,
+            &mut conflicted,
+        )?;
+        *cursor = (*cursor).max(max_latest);
+    }
+
+    let mut saved = Vec::new();
+    for (item, scope) in body.data.iter().zip(&item_scopes) {
+        let key = serde_json::to_string(&item.key).unwrap_or_default();
+        let value = match &item.data {
+            None | Some(JsonValue::Null) => Value::Null,
+            Some(v) => Value::Text(serde_json::to_string(v).unwrap_or_default()),
+        };
+        let space = match scope {
+            Scope::Personal => Value::Null,
+            Scope::Space(id) => Value::Blob(id.clone()),
+        };
+        let inserted = tx
+            .query(
+                "INSERT INTO user_data (user, space, app, key, value)
+                 VALUES ($1, $2, $3, $4, $5)
+                 RETURNING id",
+                &[
+                    Value::Blob(user_id.clone()),
+                    space,
+                    Value::Text(app.clone()),
+                    Value::Text(key.clone()),
+                    value,
+                ],
+            )
+            .map_err(internal)?;
+        let id = match inserted.first().and_then(|r| r.first()) {
+            Some(Value::Integer(i)) => *i,
+            _ => 0,
+        };
+        if let Some((_, cursor)) = cursors.iter_mut().find(|(s, _)| s == scope) {
+            *cursor = (*cursor).max(id);
+        }
+        saved.push(with_space(json!({ "key": key, "id": id }), scope));
+    }
+
+    tx.commit().map_err(internal)?;
+
+    let mut last_synced_id = body.last_synced_id;
+    let mut spaces = serde_json::Map::new();
+    for (scope, cursor) in cursors {
+        match scope {
+            Scope::Personal => last_synced_id = cursor,
+            Scope::Space(id) => {
+                spaces.insert(format_uuid(&id), json!(cursor));
+            }
+        }
+    }
+    Ok(Json(json!({
+        "data": data,
+        "saved": saved,
+        "conflicted": conflicted,
+        "lastSyncedId": last_synced_id,
+        "spaces": spaces,
+    })))
+}
+
+// Rows written by any client since `cursor` within one scope, deduplicated by
+// key keeping the most recent write (mirrors the original V/TS implementation).
+// Keys in this batch go to `conflicted`, the rest to `data`. Returns the highest
+// id seen.
+#[allow(clippy::too_many_arguments)]
+fn pull(
+    tx: &mut Transaction,
+    user_id: &[u8],
+    app: &str,
+    scope: &Scope,
+    cursor: i64,
+    uploaded_keys: &HashSet<(Scope, String)>,
+    data: &mut Vec<JsonValue>,
+    conflicted: &mut Vec<JsonValue>,
+) -> Result<i64, HttpError> {
+    let (column, owner, personal_only) = match scope {
+        Scope::Personal => ("user", user_id.to_vec(), " AND space IS NULL"),
+        Scope::Space(id) => ("space", id.clone(), ""),
+    };
     let latest_rows = tx
         .query(
-            "WITH duplicates AS (
-               SELECT id, key, value, timestamp,
-                      ROW_NUMBER() OVER (PARTITION BY user, app, key ORDER BY id DESC) AS dup
-               FROM user_data
-               WHERE id > $1 AND user = $2 AND app = $3
-             )
-             SELECT key, value, id, timestamp
-             FROM duplicates
-             WHERE dup = 1
-             ORDER BY id",
+            &format!(
+                "WITH duplicates AS (
+                   SELECT id, key, value, timestamp,
+                          ROW_NUMBER() OVER (PARTITION BY {column}, app, key ORDER BY id DESC) AS dup
+                   FROM user_data
+                   WHERE id > $1 AND {column} = $2 AND app = $3{personal_only}
+                 )
+                 SELECT key, value, id, timestamp
+                 FROM duplicates
+                 WHERE dup = 1
+                 ORDER BY id"
+            ),
             &[
-                Value::Integer(body.last_synced_id),
-                Value::Blob(user_id.clone()),
-                Value::Text(app.clone()),
+                Value::Integer(cursor),
+                Value::Blob(owner),
+                Value::Text(app.to_owned()),
             ],
         )
         .map_err(internal)?;
 
-    let uploaded_keys: HashSet<String> = body
-        .data
-        .iter()
-        .map(|item| serde_json::to_string(&item.key).unwrap_or_default())
-        .collect();
-
-    let mut data = Vec::new();
-    let mut conflicted = Vec::new();
     let mut max_latest: i64 = 0;
     for row in &latest_rows {
         let key = match row.first() {
@@ -130,61 +302,30 @@ async fn sync_data(mut req: Request) -> Result<Json<JsonValue>, HttpError> {
         if id > max_latest {
             max_latest = id;
         }
-        if uploaded_keys.contains(&key) {
-            conflicted.push(json!({
-                "key": key,
-                "data": value,
-                "id": id,
-                "timestamp": timestamp,
-            }));
+        if uploaded_keys.contains(&(scope.clone(), key.clone())) {
+            conflicted.push(with_space(
+                json!({
+                    "key": key,
+                    "data": value,
+                    "id": id,
+                    "timestamp": timestamp,
+                }),
+                scope,
+            ));
         } else {
-            data.push(json!({ "key": key, "data": value, "id": id }));
+            data.push(with_space(json!({ "key": key, "data": value, "id": id }), scope));
         }
     }
+    Ok(max_latest)
+}
 
-    let mut saved = Vec::new();
-    let mut max_saved: i64 = 0;
-    for item in &body.data {
-        let key = serde_json::to_string(&item.key).unwrap_or_default();
-        let value = match &item.data {
-            None | Some(JsonValue::Null) => Value::Null,
-            Some(v) => Value::Text(serde_json::to_string(v).unwrap_or_default()),
-        };
-        let inserted = tx
-            .query(
-                "INSERT INTO user_data (user, app, key, value)
-                 VALUES ($1, $2, $3, $4)
-                 RETURNING id",
-                &[
-                    Value::Blob(user_id.clone()),
-                    Value::Text(app.clone()),
-                    Value::Text(key.clone()),
-                    value,
-                ],
-            )
-            .map_err(internal)?;
-        let id = match inserted.first().and_then(|r| r.first()) {
-            Some(Value::Integer(i)) => *i,
-            _ => 0,
-        };
-        if id > max_saved {
-            max_saved = id;
-        }
-        saved.push(json!({ "key": key, "id": id }));
+// Tags a response row with its space. Personal rows stay untagged so clients
+// that predate spaces see exactly the old wire format.
+fn with_space(mut row: JsonValue, scope: &Scope) -> JsonValue {
+    if let (Scope::Space(id), Some(obj)) = (scope, row.as_object_mut()) {
+        obj.insert("space".to_owned(), json!(format_uuid(id)));
     }
-
-    tx.commit().map_err(internal)?;
-
-    let last_synced_id = body
-        .last_synced_id
-        .max(max_latest)
-        .max(max_saved);
-    Ok(Json(json!({
-        "data": data,
-        "saved": saved,
-        "conflicted": conflicted,
-        "lastSyncedId": last_synced_id,
-    })))
+    row
 }
 
 // Public, unauthenticated read of a page published via the `pages` Record API.
@@ -271,6 +412,19 @@ fn parse_uuid(s: &str) -> Option<Vec<u8>> {
     Some(out)
 }
 
+// Inverse of `parse_uuid`: 16 raw bytes to the canonical hyphenated lowercase form.
+fn format_uuid(bytes: &[u8]) -> String {
+    let hex: String = bytes.iter().map(|b| format!("{b:02x}")).collect();
+    format!(
+        "{}-{}-{}-{}-{}",
+        &hex[0..8],
+        &hex[8..12],
+        &hex[12..16],
+        &hex[16..20],
+        &hex[20..]
+    )
+}
+
 fn text_response(status: StatusCode, body: &str) -> Response {
     let mut resp = Response::new(body.to_owned().into_body());
     *resp.status_mut() = status;
@@ -287,13 +441,15 @@ fn text_response(status: StatusCode, body: &str) -> Response {
 const RETENTION_MODIFIER: &str = "-1 month";
 
 // Nightly maintenance: drop rows that have been superseded by a newer write for
-// the same (user, app, key) AND are older than the retention window. user_data
-// is append-only, so without this the table grows unbounded with stale history.
+// the same key in the same scope AND are older than the retention window.
+// user_data is append-only, so without this the table grows unbounded with stale
+// history.
 //
-// The `ROW_NUMBER() OVER (PARTITION BY user, app, key ORDER BY id DESC)` window
-// mirrors the "latest value per key" derivation in `sync_data`: dup = 1 is the
-// current value (always kept); dup > 1 are overwrites. Recent overwrites stay
-// reconcilable because only those older than RETENTION_MODIFIER are removed.
+// The window mirrors the "latest value per key" derivation in `sync_data`: a
+// personal row's scope is (user, app), a space row's is (space, app) regardless
+// of which member wrote it. dup = 1 is the current value (always kept); dup > 1
+// are overwrites. Recent overwrites stay reconcilable because only those older
+// than RETENTION_MODIFIER are removed.
 async fn prune_overwritten_data() -> Result<String, HttpError> {
     let cutoff = format!("strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '{RETENTION_MODIFIER}')");
     let deleted = db::execute(
@@ -302,7 +458,10 @@ async fn prune_overwritten_data() -> Result<String, HttpError> {
              WHERE id IN (
                SELECT id FROM (
                  SELECT id, timestamp,
-                        ROW_NUMBER() OVER (PARTITION BY user, app, key ORDER BY id DESC) AS dup
+                        ROW_NUMBER() OVER (
+                          PARTITION BY space, iif(space IS NULL, user, NULL), app, key
+                          ORDER BY id DESC
+                        ) AS dup
                  FROM user_data
                )
                WHERE dup > 1 AND timestamp < {cutoff}
