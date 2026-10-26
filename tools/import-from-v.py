@@ -5,7 +5,7 @@ TrailBase main.db used by NewImageBase.
 What gets ported
 ----------------
 * Each row in the V `users` table becomes a row in TrailBase's `_user`,
-  with a freshly-generated UUIDv4, `verified=1`, and an empty
+  with a freshly-generated UUIDv4, a verified email, and an empty
   `password_hash`. Empty hashes can never authenticate, so users must use
   the password-reset flow on first login (see README).
 * Each row in the V `data` table is copied into `user_data` under the
@@ -114,8 +114,10 @@ def main() -> int:
                 print(f"wiped {cur.rowcount} existing rows for app='{args.app}'")
 
             new.executemany(
-                "INSERT INTO _user (id, email, password_hash, verified) "
-                "VALUES (?, ?, '', 1)",
+                # A user is verified when `email` (not `unverified_email`)
+                # is set.
+                "INSERT INTO _user (id, email, password_hash) "
+                "VALUES (?, ?, '')",
                 [(user_map[u["id"]], u["email"]) for u in to_insert],
             )
             new.executemany(

@@ -19,11 +19,11 @@ deploy: build-wasm
 
 run: deploy
 	mkdir -p $(UPLOADS)
-	trail --data-dir=$(TRAILDEPOT) run --address=$(ADDRESS) --runtime-root-fs=$(UPLOADS)
+	trail --depot=$(TRAILDEPOT) run --address=$(ADDRESS) --runtime-root-fs=$(UPLOADS)
 
 dev: deploy
 	mkdir -p $(UPLOADS)
-	trail --data-dir=$(TRAILDEPOT) run --address=$(ADDRESS) --dev --stderr-logging --runtime-root-fs=$(UPLOADS)
+	trail --depot=$(TRAILDEPOT) run --address=$(ADDRESS) --dev --stderr-logging --runtime-root-fs=$(UPLOADS)
 
 clean:
 	rm -rf guests/rust/target

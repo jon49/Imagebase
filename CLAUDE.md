@@ -53,7 +53,7 @@ the Makefile.
   `guests/rust/target/wasm32-wasip2/release/imagebase_guest.wasm` and is copied to
   `traildepot/wasm/imagebase_guest.wasm` (gitignored) by `make deploy`.
 
-- **`traildepot/`** — the TrailBase data dir passed via `--data-dir`. `config.textproto` is the
+- **`traildepot/`** — the TrailBase depot (data dir) passed via `--depot`. `config.textproto` is the
   server config; `migrations/main/*.sql` run at startup; `data/` (main.db, logs.db, session.db)
   and `secrets/` are runtime-generated and gitignored.
 

@@ -58,7 +58,7 @@ fi
 mkdir -p "$DATA_DIR/uploads"
 
 echo "--- starting trail on $TEST_URL ---"
-trail --data-dir="$DATA_DIR" run --address="localhost:$TEST_PORT" --dev --stderr-logging \
+trail --depot="$DATA_DIR" run --address="localhost:$TEST_PORT" --dev --stderr-logging \
     --runtime-root-fs="$DATA_DIR/uploads" \
     >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
@@ -88,9 +88,17 @@ run_hurl invalid-register.tests.hurl
 echo "--- register canonical user (idempotent) ---"
 run_hurl register-user.tests.hurl
 
+# Unverified users can't log in. (`trail user verify` can't find a user whose
+# address is still unverified, so move it across directly; plain sqlite3 lacks
+# the is_email() its CHECK constraints call, and the address is already valid.)
+verify() {
+    sqlite3 "$DATA_DIR/data/main.db" \
+        "PRAGMA ignore_check_constraints = ON;
+         UPDATE _user SET email = unverified_email, unverified_email = NULL WHERE unverified_email = '$1';"
+}
+
 echo "--- mark user verified so login can succeed ---"
-sqlite3 "$DATA_DIR/data/main.db" \
-    "UPDATE _user SET verified = 1 WHERE email = '$email';"
+verify "$email"
 
 echo "--- invalid login attempts ---"
 run_hurl invalid-login.tests.hurl
@@ -139,7 +147,7 @@ password=$(grep '^password=' "$ENV_FILE" | cut -d= -f2-)
 curl -s -o /dev/null -X POST "$TEST_URL/api/auth/v1/register" \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"$email_b\",\"password\":\"$password\",\"password_repeat\":\"$password\"}"
-sqlite3 "$DATA_DIR/data/main.db" "UPDATE _user SET verified = 1 WHERE email = '$email_b';"
+verify "$email_b"
 token_b=$(curl -sf -X POST "$TEST_URL/api/auth/v1/login" \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"$email_b\",\"password\":\"$password\"}" \
@@ -197,7 +205,7 @@ b_space_rows=$(sqlite3 "$DATA_DIR/data/main.db" "
      WHERE space IS NOT NULL AND user = (SELECT id FROM _user WHERE email = '$email_b');")
 # Via `trail`, not sqlite3: the FK actions touch tables whose CHECKs call
 # TrailBase-only SQL functions (`is_uuid`, ...) the stock CLI doesn't have.
-trail --data-dir="$DATA_DIR" user delete "$email_b" >/dev/null 2>&1
+trail --depot="$DATA_DIR" user delete "$email_b" >/dev/null 2>&1
 orphaned=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE user IS NULL AND space IS NOT NULL;")
 personal_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE value = '{\"b\":\"personal\"}';")
 s1_members=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM space_members WHERE space = X'55555555555555555555555555555555';")
