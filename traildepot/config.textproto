@@ -9,18 +9,21 @@ auth {
   refresh_token_ttl_sec: 2592000
 }
 jobs {}
-# Publishable HTML pages. Write-only over the Record API: only the auth token of
-# the user registered in `app_owners` for the row's `app` may create/update/delete.
+# Publishable HTML pages. Write-only over the Record API. Writers are either the
+# user registered in `app_owners` for the row's `app`, or a member of the row's
+# `space` (which must belong to the same `app`).
 # Public reads go through the custom guest route `GET /api/pages/{app}/{id}`.
 # REPLACE conflict resolution: re-POSTing the same client-supplied `id` overwrites.
+# Because a create can therefore overwrite, the space branch of the create rule
+# also refuses an `id` that already exists outside the caller's space.
 record_apis: [
   {
     name: "pages"
     table_name: "pages"
     conflict_resolution: REPLACE
     acl_authenticated: [CREATE, UPDATE, DELETE]
-    create_access_rule: "EXISTS(SELECT 1 FROM app_owners WHERE app = _REQ_.app AND owner = _USER_.id)"
-    update_access_rule: "EXISTS(SELECT 1 FROM app_owners WHERE app = _ROW_.app AND owner = _USER_.id)"
-    delete_access_rule: "EXISTS(SELECT 1 FROM app_owners WHERE app = _ROW_.app AND owner = _USER_.id)"
+    create_access_rule: "EXISTS(SELECT 1 FROM app_owners WHERE app = _REQ_.app AND owner = _USER_.id) OR (EXISTS(SELECT 1 FROM space_members m JOIN spaces s ON s.id = m.space WHERE m.space = _REQ_.space AND m.user = _USER_.id AND s.app = _REQ_.app) AND NOT EXISTS(SELECT 1 FROM pages WHERE id = _REQ_.id AND space IS NOT _REQ_.space))"
+    update_access_rule: "EXISTS(SELECT 1 FROM app_owners WHERE app = _ROW_.app AND owner = _USER_.id) OR (EXISTS(SELECT 1 FROM space_members WHERE space = _ROW_.space AND user = _USER_.id) AND (_REQ_.space IS NULL OR _REQ_.space = _ROW_.space))"
+    delete_access_rule: "EXISTS(SELECT 1 FROM app_owners WHERE app = _ROW_.app AND owner = _USER_.id) OR EXISTS(SELECT 1 FROM space_members WHERE space = _ROW_.space AND user = _USER_.id)"
   }
 ]

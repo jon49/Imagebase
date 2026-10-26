@@ -46,9 +46,10 @@ the Makefile.
 ## Architecture
 
 - **`guests/rust/src/lib.rs`** — the entire custom backend. Implements the `trailbase_wasm::Guest`
-  trait, exporting two routes: `POST /api/data/{app}` → `sync_data` (the CRDT sync protocol) and
+  trait, exporting `POST /api/data/{app}` → `sync_data` (the CRDT sync protocol),
   `GET /api/pages/{app}/{id}` → `serve_page` (public, unauthenticated read of a published HTML
-  page — see below). Build artifact lands at
+  page — see below), and the shared-space membership/invite routes under `/api/spaces/{app}` and
+  `/api/invites/{app}`. Build artifact lands at
   `guests/rust/target/wasm32-wasip2/release/imagebase_guest.wasm` and is copied to
   `traildepot/wasm/imagebase_guest.wasm` (gitignored) by `make deploy`.
 
@@ -82,6 +83,23 @@ the Makefile.
   inserted, `lastSyncedId` = max of the incoming cursor and any ids seen/written. All writes happen
   in a single `Transaction`.
 
+- **Shared spaces** (migration `U1792800000`). A row is either personal (`space IS NULL`, scoped by
+  `user`) or belongs to a `spaces` row whose `space_members` all read/write it as equals; for space
+  rows `user` is just the author. Items opt in with `"space": "<uuid>"`; non-members get 403 for the
+  whole batch. `lastSyncedId` covers personal rows only; `spaces: {uuid: cursor}` in the request
+  carries per-space cursors (an omitted member space starts at 0) and the response returns one for
+  every space the caller is in. Space rows in `data`/`saved`/`conflicted` carry `space`; personal
+  rows don't, so pre-spaces clients see the old wire format. Space members may also publish `pages`
+  with `space` set.
+
+- **Membership/invite routes** (all authenticated; non-members get 404, never 403, so space ids
+  can't be probed; every member has equal rights): `POST /api/spaces/{app}` creates a space with
+  the caller as sole member; `GET …/{space}/members`; `DELETE …/{space}/members/{user|me}`;
+  `POST …/{space}/invites` mints a single-use code valid 7 days; `GET /api/invites/{app}/{code}`
+  previews it; `POST /api/invites/{app}/{code}/accept` joins (a no-op for existing members, which
+  leaves the code unspent). Triggers delete a space when its last member goes and revoke a
+  member's open invites when they're removed. UUIDs come from SQLite `randomblob` (no uuid crate).
+
 - TrailBase auth endpoints live under `/api/auth/v1/*` (register/login/logout/reset_password). See
   the README table mapping old V `/api/authentication/*` routes to their TrailBase equivalents.
 
@@ -109,6 +127,7 @@ the Makefile.
 ## Conventions
 
 - Migrations are immutable once applied; add a new `U<timestamp>__*.sql` rather than editing an
-  existing one. Tables use `STRICT`. `user_data.user` cascade-deletes with `_user`.
+  existing one. Tables use `STRICT`. Deleting a `_user` deletes their personal `user_data` rows
+  (trigger) but only nulls `user` on their space rows, so shared data never rolls back.
 - The guest release profile is size-tuned (`opt-level = "s"`, `lto`, `strip`); keep it lean —
   binary size affects the ~63 MB RSS target called out in the README.
