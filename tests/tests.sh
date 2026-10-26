@@ -58,7 +58,7 @@ fi
 mkdir -p "$DATA_DIR/uploads"
 
 echo "--- starting trail on $TEST_URL ---"
-trail --data-dir="$DATA_DIR" run --address="localhost:$TEST_PORT" --dev --stderr-logging \
+trail --depot="$DATA_DIR" run --address="localhost:$TEST_PORT" --dev --stderr-logging \
     --runtime-root-fs="$DATA_DIR/uploads" \
     >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
@@ -88,9 +88,17 @@ run_hurl invalid-register.tests.hurl
 echo "--- register canonical user (idempotent) ---"
 run_hurl register-user.tests.hurl
 
+# Unverified users can't log in. (`trail user verify` can't find a user whose
+# address is still unverified, so move it across directly; plain sqlite3 lacks
+# the is_email() its CHECK constraints call, and the address is already valid.)
+verify() {
+    sqlite3 "$DATA_DIR/data/main.db" \
+        "PRAGMA ignore_check_constraints = ON;
+         UPDATE _user SET email = unverified_email, unverified_email = NULL WHERE unverified_email = '$1';"
+}
+
 echo "--- mark user verified so login can succeed ---"
-sqlite3 "$DATA_DIR/data/main.db" \
-    "UPDATE _user SET verified = 1 WHERE email = '$email';"
+verify "$email"
 
 echo "--- invalid login attempts ---"
 run_hurl invalid-login.tests.hurl

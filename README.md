@@ -162,7 +162,7 @@ the file is missing; `400` if `{id}` isn't a UUID.
 ### Storage location / ops note
 
 Object store defaults to `<data-dir>/uploads/`; relocate by moving the data dir
-(`DATA_DIR` env / `--data-dir`), or point at an S3 bucket via
+(`DEPOT` env / `--depot`), or point at an S3 bucket via
 `server.s3_storage_config` in `config.textproto`. For the public read route to
 work, `trail` must run with `--runtime-root-fs=<data-dir>/uploads` (the `make
 dev` / `make run` targets do this) — only `uploads/` is mounted into the guest,
@@ -209,7 +209,7 @@ namespace before re-importing.
 
 What gets ported:
 
-- `users` rows → `_user` (fresh UUIDv4, `verified=1`, empty
+- `users` rows → `_user` (fresh UUIDv4, verified email, empty
   `password_hash`)
 - `data` rows → `user_data` scoped to the chosen `--app`, in original id
   order so client-side `lastSyncedId` cursors stay monotonically usable

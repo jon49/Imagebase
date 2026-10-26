@@ -333,7 +333,7 @@ impl Guest for GuestImpl {
     fn job_handlers() -> Vec<Job> {
         // Cron spec is "sec min hour day month weekday": 03:30 every night.
         vec![
-            Job::new("prune_overwritten_data", "0 30 3 * * *", prune_overwritten_data)
+            Job::new("prune_overwritten_data", "0 30 3 * * *", None, prune_overwritten_data)
                 .expect("valid cron spec"),
         ]
     }
