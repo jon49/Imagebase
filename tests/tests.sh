@@ -159,6 +159,35 @@ sqlite3 "$DATA_DIR/data/main.db" "
 echo "--- spaces: shared sync + space-member page publishing ---"
 run_hurl --variable "token=$token" --variable "token_b=$token_b" spaces.tests.hurl
 
+echo "--- spaces: create / invite / accept / remove / leave ---"
+run_hurl --variable "token=$token" --variable "token_b=$token_b" invites.tests.hurl
+
+left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM spaces WHERE app = 'invite-test';")
+if [ "$left" != "0" ]; then
+    echo "FAIL: memberless invite-test space was not garbage-collected (spaces=$left)"
+    exit 1
+fi
+
+# Expiry can't be fast-forwarded over HTTP: mint a space, plant an already
+# expired invite next to a live one, and check only the live one is accepted.
+echo "--- spaces: expired invites are refused ---"
+expiry_space=$(curl -sf -X POST "$TEST_URL/api/spaces/invite-test" -H "Authorization: Bearer $token" \
+    | python3 -c 'import json,sys;print(json.load(sys.stdin)["space"].replace("-",""))')
+sqlite3 "$DATA_DIR/data/main.db" "
+    INSERT INTO space_invites (code, space, created_by, expires)
+      SELECT X'aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa', X'$expiry_space', id, UNIXEPOCH() - 1 FROM _user WHERE email = '$email';
+    INSERT INTO space_invites (code, space, created_by, expires)
+      SELECT X'bbbbbbbbbbbb4bbb8bbbbbbbbbbbbbbb', X'$expiry_space', id, UNIXEPOCH() + 60 FROM _user WHERE email = '$email';"
+expired_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $token_b" \
+    "$TEST_URL/api/invites/invite-test/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/accept")
+live_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $token_b" \
+    "$TEST_URL/api/invites/invite-test/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/accept")
+if [ "$expired_status" != "404" ] || [ "$live_status" != "200" ]; then
+    echo "FAIL: invite expiry (expired=$expired_status, expect 404; live=$live_status, expect 200)"
+    exit 1
+fi
+echo "invite expiry assertions passed"
+
 # Deleting a member must drop their personal rows and memberships but keep what
 # they wrote into a shared space (authorless), so the other members' data
 # doesn't roll back to older values.
