@@ -262,4 +262,26 @@ echo "prune assertions passed (deleted the aged overwrite, kept latest + recent)
 echo "--- logout flow ---"
 run_hurl logout.tests.hurl
 
+# Runs last so its user_data rows can't shift the exact ids earlier tests assert.
+echo "--- delete account: register + verify a throwaway user ---"
+email_c=$(grep '^email_c=' "$ENV_FILE" | cut -d= -f2-)
+curl -s -o /dev/null -X POST "$TEST_URL/api/auth/v1/register" \
+    -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$email_c\",\"password\":\"$password\",\"password_repeat\":\"$password\"}"
+verify "$email_c"
+c_id=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT hex(id) FROM _user WHERE email = '$email_c';")
+
+echo "--- delete account: self-service delete, stale token rejected ---"
+run_hurl delete-account.tests.hurl
+
+users_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM _user WHERE id = X'$c_id';")
+rows_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE app = 'delete-test';")
+spaces_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM spaces WHERE app = 'delete-test';")
+if [ "$users_left" != "0" ] || [ "$rows_left" != "0" ] || [ "$spaces_left" != "0" ]; then
+    echo "FAIL: account delete left data behind" \
+         "(users=$users_left rows=$rows_left spaces=$spaces_left; expected 0/0/0)"
+    exit 1
+fi
+echo "delete-account assertions passed (user, personal rows and sole-member space gone)"
+
 echo "--- done ---"

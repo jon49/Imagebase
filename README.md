@@ -182,8 +182,23 @@ tokens (plus a refresh token and CSRF token). Frontends should call:
 | `POST /api/authentication/logout`              | `POST /api/auth/v1/logout`                  |
 | `POST /api/authentication/forgot-password`     | `POST /api/auth/v1/reset_password/request`  |
 | `POST /api/authentication/reset-password`      | `POST /api/auth/v1/reset_password/update`   |
+| —                                              | `DELETE /api/auth/v1/delete` (Bearer)       |
 | session cookie named `session`                 | `auth_token` (Bearer) + refresh token       |
 | `/shutdown?key=...`                            | drop — send SIGTERM to the process          |
+
+### Deleting an account
+
+`DELETE /api/auth/v1/delete` with `Authorization: Bearer <auth_token>` deletes
+the caller's own account and all of its sessions. Triggers in the migrations
+then delete the user's personal `user_data` rows and their space memberships;
+a space they were the last member of is deleted with its data. Rows they wrote
+into a space that still has members are kept, with their author cleared, so
+the other members' data doesn't roll back.
+
+The auth token is a stateless JWT and stays cryptographically valid until it
+expires (`auth_token_ttl_sec`, 1h), but the custom routes check the user still
+exists and answer `401`, as they do for a missing token. Clients should drop
+their tokens once the delete succeeds.
 
 Schema-side:
 

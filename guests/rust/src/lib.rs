@@ -46,13 +46,24 @@ enum Scope {
 }
 
 // The authenticated caller's id as the raw 16-byte blob stored in `_user.id`.
-fn caller_id(req: &Request) -> Result<Vec<u8>, HttpError> {
-    let user = req
-        .user()
-        .ok_or_else(|| HttpError::message(StatusCode::UNAUTHORIZED, "Unauthorized"))?;
-    URL_SAFE
+//
+// Auth tokens are stateless JWTs that outlive account deletion
+// (`DELETE /api/auth/v1/delete`) until they expire, so check the user still
+// exists. Otherwise a deleted user's reads succeed empty and writes trip the
+// `_user` foreign keys as a 500.
+async fn caller_id(req: &Request) -> Result<Vec<u8>, HttpError> {
+    let unauthorized = || HttpError::message(StatusCode::UNAUTHORIZED, "Unauthorized");
+    let user = req.user().ok_or_else(unauthorized)?;
+    let id = URL_SAFE
         .decode(user.id.as_bytes())
-        .map_err(|_| HttpError::message(StatusCode::INTERNAL_SERVER_ERROR, "bad user id"))
+        .map_err(|_| HttpError::message(StatusCode::INTERNAL_SERVER_ERROR, "bad user id"))?;
+    let rows = db::query("SELECT 1 FROM _user WHERE id = $1", &[Value::Blob(id.clone())])
+        .await
+        .map_err(internal)?;
+    if rows.is_empty() {
+        return Err(unauthorized());
+    }
+    Ok(id)
 }
 
 // Per-app scoping: the path segment carves out a namespace inside the shared
@@ -72,7 +83,7 @@ fn uuid_param(req: &Request, name: &str) -> Result<Vec<u8>, HttpError> {
 }
 
 async fn sync_data(mut req: Request) -> Result<Json<JsonValue>, HttpError> {
-    let user_id = caller_id(&req)?;
+    let user_id = caller_id(&req).await?;
     let app = app_param(&req)?;
 
     let body_bytes = req
@@ -390,7 +401,7 @@ fn require_member(
 
 // POST /api/spaces/{app} -> { "space": "<uuid>" }. The caller is the first member.
 async fn create_space(req: Request) -> Result<Json<JsonValue>, HttpError> {
-    let user_id = caller_id(&req)?;
+    let user_id = caller_id(&req).await?;
     let app = app_param(&req)?;
 
     let mut tx = Transaction::begin().map_err(internal)?;
@@ -413,7 +424,7 @@ async fn create_space(req: Request) -> Result<Json<JsonValue>, HttpError> {
 // GET /api/spaces/{app}/{space}/members
 //   -> { "members": [{ "user", "email", "joined", "me" }] }
 async fn list_members(req: Request) -> Result<Json<JsonValue>, HttpError> {
-    let user_id = caller_id(&req)?;
+    let user_id = caller_id(&req).await?;
     let app = app_param(&req)?;
     let space = uuid_param(&req, "space")?;
 
@@ -451,7 +462,7 @@ async fn list_members(req: Request) -> Result<Json<JsonValue>, HttpError> {
 // space and its data; a removed member's open invites are revoked (both via
 // triggers in the migrations).
 async fn remove_member(req: Request) -> Result<Json<JsonValue>, HttpError> {
-    let user_id = caller_id(&req)?;
+    let user_id = caller_id(&req).await?;
     let app = app_param(&req)?;
     let space = uuid_param(&req, "space")?;
     let target = match req.path_param("user") {
@@ -484,7 +495,7 @@ async fn remove_member(req: Request) -> Result<Json<JsonValue>, HttpError> {
 // POST /api/spaces/{app}/{space}/invites -> { "code": "<uuid>", "expires": <unix secs> }.
 // Single-use, valid for INVITE_TTL_SECS.
 async fn create_invite(req: Request) -> Result<Json<JsonValue>, HttpError> {
-    let user_id = caller_id(&req)?;
+    let user_id = caller_id(&req).await?;
     let app = app_param(&req)?;
     let space = uuid_param(&req, "space")?;
 
@@ -545,7 +556,7 @@ fn is_member(tx: &mut Transaction, space: &[u8], user_id: &[u8]) -> Result<bool,
 // GET /api/invites/{app}/{code} -> { "space", "invitedBy", "expires", "member" }.
 // Lets the invitee see who's inviting them before accepting; doesn't consume.
 async fn get_invite(req: Request) -> Result<Json<JsonValue>, HttpError> {
-    let user_id = caller_id(&req)?;
+    let user_id = caller_id(&req).await?;
     let app = app_param(&req)?;
     let code = uuid_param(&req, "code")?;
 
@@ -579,7 +590,7 @@ async fn get_invite(req: Request) -> Result<Json<JsonValue>, HttpError> {
 // member accepting (e.g. the inviter trying their own link) is a no-op that
 // leaves the invite usable for whoever it was meant for.
 async fn accept_invite(req: Request) -> Result<Json<JsonValue>, HttpError> {
-    let user_id = caller_id(&req)?;
+    let user_id = caller_id(&req).await?;
     let app = app_param(&req)?;
     let code = uuid_param(&req, "code")?;
 
