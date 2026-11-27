@@ -34,7 +34,10 @@ tools/                 importers from a TrailBase depot and from the V server
 
 ## Prerequisites
 
-- [Goose](https://github.com/aardappel/goose/releases) v2026.4 on `$PATH` (`goose`)
+- [Goose](https://github.com/aardappel/goose) v2026.4 or newer. The task scripts use a
+  checkout beside this repo (`../goose`) when there is one: `tasks/update-goose.sh`
+  clones or pulls it, builds it (needs cmake ≥ 3.27 and a C++20 compiler), rebuilds the
+  server and runs the tests. Otherwise `goose` on `$PATH` is used
 - a C compiler (gcc or clang) and SQLite ≥ 3.38 development files (`libsqlite3-dev`)
 - for the tests: `hurl`, `curl`, `python3`, `sqlite3`
 - for delivering mail: a `sendmail`-compatible command (msmtp, postfix, ...)

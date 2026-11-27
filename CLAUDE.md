@@ -17,6 +17,7 @@ make check      # goose check (type/lifetime check only, fast)
 make dev        # build + run with --dev (mails logged to stderr) and an access log
 make run        # build + run; DATA=data ADDRESS=localhost:4000
 make test       # = ./tasks/test.sh, the Hurl suite (builds, spawns its own server)
+tasks/update-goose.sh [--no-test]   # git pull + build ../goose, rebuild the server, run tests
 bench/run-imagebase.sh [--duration N --concurrency N --out f.json]   # load + CPU/RSS benchmark
 bench/run-trailbase.sh [...]    # the same against the old TrailBase build, in a git worktree
 ```
@@ -31,7 +32,10 @@ Admin tasks are CLI subcommands: `server/imagebase --data DIR user verify|delete
 
 ## Prerequisites
 
-`goose` v2026.4 on `$PATH`, gcc, the SQLite dev library (linked dynamically),
+Goose: the task scripts (`tasks/*.sh`, via `tasks/goose-env.sh`) export `GOOSE` as
+`../goose/build/goose` when that checkout exists, else `goose` on `$PATH` is used; the
+Makefile honors `GOOSE`. After a compiler update use `make -B build` (make only tracks
+sources). Also needed: gcc, the SQLite dev library (linked dynamically),
 plus `hurl`, `sqlite3` and `python3` for the tests.
 
 ## Architecture
