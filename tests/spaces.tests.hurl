@@ -189,3 +189,53 @@ GET {{url}}/api/pages/11111111-1111-1111-1111-111111111111
 HTTP 200
 [Asserts]
 body not contains "HIJACK"
+
+# 14. A page published outside a space and then moved into one (as soccer does
+#     when a team with a published schedule is shared): before the move B may
+#     not touch it; after it, B may overwrite and delete it.
+POST {{url}}/api/records/v1/pages
+Authorization: Bearer {{token}}
+Content-Type: application/json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "html": { "filename": "m.html", "content_type": "text/html", "data": "PGgxPk1PVkVEPC9oMT4=" }
+}
+HTTP 200
+
+POST {{url}}/api/records/v1/pages
+Authorization: Bearer {{token_b}}
+Content-Type: application/json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "space": "55555555-5555-5555-5555-555555555555",
+  "html": { "filename": "m.html", "content_type": "text/html", "data": "PGgxPm5vPC9oMT4=" }
+}
+HTTP 403
+
+PATCH {{url}}/api/records/v1/pages/77777777-7777-4777-8777-777777777777
+Authorization: Bearer {{token}}
+Content-Type: application/json
+{ "space": "55555555-5555-5555-5555-555555555555" }
+HTTP 200
+
+POST {{url}}/api/records/v1/pages
+Authorization: Bearer {{token_b}}
+Content-Type: application/json
+{
+  "id": "77777777-7777-4777-8777-777777777777",
+  "space": "55555555-5555-5555-5555-555555555555",
+  "html": { "filename": "m.html", "content_type": "text/html", "data": "PGgxPk1PVkVELUI8L2gxPg==" }
+}
+HTTP 200
+
+GET {{url}}/api/pages/77777777-7777-4777-8777-777777777777
+HTTP 200
+[Asserts]
+body contains "MOVED-B"
+
+DELETE {{url}}/api/records/v1/pages/77777777-7777-4777-8777-777777777777
+Authorization: Bearer {{token_b}}
+HTTP 200
+
+GET {{url}}/api/pages/77777777-7777-4777-8777-777777777777
+HTTP 404

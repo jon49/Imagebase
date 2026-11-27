@@ -79,6 +79,20 @@ plus `hurl`, `sqlite3` and `python3` for the tests.
   author). Non-members get 403 for the whole batch; `spaces` cursors are
   per space.
 
+### Published pages (pages.goose)
+
+- Pages are files: `<pages-dir>/<id>.html` (nginx serves the dir in production),
+  and the page's space, if any, is the one line of `<pages-dir>/.spaces/<id>`.
+  No table: migration 0003 wrote the old `pages` rows out and dropped it.
+- Write rules: the page owner (`page_owner`) may write any page; a space member
+  only a page of their space, or a new id they claim for their space. The
+  check and the write run under the DB write gate (`begin_write`) so they
+  can't interleave. Without `--pages-dir` every page route answers 404.
+- Pages expire `--pages-max-age` days (default 90) after their file's last
+  write (`prune_pages`, nightly and in `imagebase prune`). The `.spaces/<id>`
+  line is kept (`owner` outside a space) and counts as a claim: an expired id
+  can only be republished by its owner or its space's members.
+
 ## Goose gotchas hit here (v2026.4)
 
 - **Compiler bug:** a bool-returning function whose `defer` is in its outermost

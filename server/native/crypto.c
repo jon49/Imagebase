@@ -204,3 +204,15 @@ void ib_chmod_private(ib_slice path) {
     p[path.len] = 0;
     chmod(p, 0600);
 }
+
+/* A file's modification time in seconds since the epoch, or -1 if it can't
+ * be read (no stat in Goose's os module). */
+int64_t ib_file_mtime(ib_slice path) {
+    char p[4096];
+    if (path.len <= 0 || path.len >= (int64_t)sizeof p) return -1;
+    memcpy(p, path.data, (size_t)path.len);
+    p[path.len] = 0;
+    struct stat st;
+    if (stat(p, &st) != 0) return -1;
+    return (int64_t)st.st_mtime;
+}

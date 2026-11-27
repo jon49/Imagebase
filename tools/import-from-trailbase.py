@@ -19,7 +19,8 @@ What carries over, unchanged:
 * The app's `user_data`, with the same ids and the AUTOINCREMENT high-water
   mark, so clients' `lastSyncedId` and per-space cursors stay valid.
 * The app's `pages`: each row's file is read out of the depot's object store
-  (`<depot>/uploads/<object id>`) and stored in the row itself.
+  (`<depot>/uploads/<object id>`) and written to `--pages-dir` as `<id>.html`,
+  with its space, if any, in `.spaces/<id>` (as the server keeps pages).
 
 What does not: sessions (TrailBase's tokens are signed with its own key, so
 users sign in again; their passwords still work), pending verification and
@@ -36,6 +37,7 @@ import json
 import os
 import sqlite3
 import sys
+import uuid
 
 # (table, columns copied, which rows belong to the app being imported)
 COPY_TABLES = [
@@ -47,11 +49,26 @@ COPY_TABLES = [
 ]
 
 
+def write_atomic(path: str, data: bytes | None) -> None:
+    """Writes `data` to `path` via a temp file and a rename; None removes it."""
+    if data is None:
+        if os.path.exists(path):
+            os.remove(path)
+        return
+    tmp = path + ".tmp"
+    with open(tmp, "wb") as f:
+        f.write(data)
+    os.chmod(tmp, 0o644)
+    os.replace(tmp, path)
+
+
 def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     p.add_argument("--depot", default="traildepot", help="TrailBase depot dir (default: traildepot)")
     p.add_argument("--data", default="data", help="imagebase data dir (default: data)")
     p.add_argument("--app", help="which app's data to import (required if the depot has several)")
+    p.add_argument("--pages-dir", help="where the server publishes pages (its --pages-dir); "
+                   "required if the app has published pages")
     p.add_argument("--dry-run", action="store_true", help="count what would be copied, write nothing")
     p.add_argument("--keep-admin-localhost", action="store_true",
                    help="also copy TrailBase's auto-created admin@localhost account")
@@ -68,7 +85,7 @@ def main() -> int:
     dst = sqlite3.connect(dst_path)
     dst.execute("PRAGMA foreign_keys = ON")
 
-    for t in ("_user", "user_data", "spaces", "pages"):
+    for t in ("_user", "user_data", "spaces"):
         if dst.execute(f"SELECT 1 FROM {t} LIMIT 1").fetchone():
             sys.exit(f"{dst_path} already has rows in {t}; import into a fresh data dir")
 
@@ -125,6 +142,8 @@ def main() -> int:
         print(f"{table}: {len(rows[table])}")
     print(f"page owner: {'yes' if owner else 'none'}")
     print(f"pages: {len(pages)}" + (f" ({missing} skipped: file missing from uploads/)" if missing else ""))
+    if pages and not a.pages_dir:
+        sys.exit("the app has published pages: give --pages-dir (the server's) to write them to")
     if a.dry_run:
         print("dry run: nothing written")
         return 0
@@ -139,10 +158,17 @@ def main() -> int:
             dst.execute("UPDATE sqlite_sequence SET seq = max(seq, ?) WHERE name = 'user_data'", seq)
             dst.execute("INSERT INTO sqlite_sequence (name, seq) SELECT 'user_data', ? "
                         "WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'user_data')", seq)
-        dst.executemany("""INSERT INTO pages (id, space, filename, content_type, html, created, updated)
-                           VALUES (?, ?, ?, ?, ?, ?, ?)""", pages)
         if owner:
             dst.execute("INSERT INTO page_owner (id, owner) VALUES (1, ?)", (owner,))
+    if pages:
+        spaces_dir = os.path.join(a.pages_dir, ".spaces")
+        os.makedirs(spaces_dir, exist_ok=True)
+        for pid, space, _name, _ctype, body, _created, _updated in pages:
+            name = str(uuid.UUID(bytes=pid))
+            write_atomic(os.path.join(spaces_dir, name),
+                         (str(uuid.UUID(bytes=space)) + "\n").encode() if space else None)
+            write_atomic(os.path.join(a.pages_dir, name + ".html"), body)
+        print(f"wrote {len(pages)} page(s) to {a.pages_dir}")
     print(f"imported into {dst_path}")
     return 0
 

@@ -28,7 +28,7 @@ server/
   auth.goose           /api/auth/v1/*: accounts, sessions, HS256 JWTs, reset pages
   sync.goose           POST /api/data: the sync protocol
   spaces.goose         /api/spaces, /api/invites: shared-space membership
-  pages.goose          /api/records/v1/pages (writes), /api/pages (public reads)
+  pages.goose          /api/records/v1/pages: pages written as files to --pages-dir
   maintenance.goose    migrations runner and the nightly prune
   http.goose db.goose util.goose config.goose mail.goose
   migrations/*.sql     schema, embedded in the binary
@@ -96,7 +96,8 @@ working. From one app (`--app`, needed only when the depot served several), it
 copies spaces, members, invites, the page owner and sync rows, keeping their
 ids, so client cursors stay valid. For several apps, import each into its own
 data dir and run a server for each. Published pages come across
-too, with their bytes read out of `traildepot/uploads/`. Sessions don't come
+too: their bytes are read out of `traildepot/uploads/` and written as files to
+the importer's `--pages-dir` (the server's). Sessions don't come
 across: TrailBase's tokens were signed with its own key, so users log in once
 more. `tools/import-from-v.py` still imports from the original V server. For a production
 cutover, follow [docs/migrating-from-trailbase.md](docs/migrating-from-trailbase.md).
@@ -178,12 +179,38 @@ Every member has the same rights.
 
 ### Published pages
 
+Pages are **files**: the server writes each one to `<pages-dir>/<id>.html`
+(`--pages-dir DIR`, off when not given) so the web server can serve the
+directory as it is, e.g. nginx:
+
+```nginx
+location ~ "^/api/pages/(?<id>[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$" {
+    alias /var/www/example/pages/$id.html;
+    types { }                 # nginx types by the URI, which has no extension
+    default_type text/html;
+    charset utf-8;
+    add_header Cache-Control "no-cache";
+}
+```
+
+The space a page belongs to is the one line of `<pages-dir>/.spaces/<id>`,
+which only the write rules read (a well-formed id never maps to it). Writes are
+atomic (a new file renamed over the old). Keep the directory out of anything a
+deploy replaces wholesale. It isn't in the database, so back it up separately,
+or treat pages as regenerable by republishing.
+
+Pages **expire**: the nightly prune (and `imagebase prune`) deletes a page not
+written for `--pages-max-age` days (default 90; 0 keeps pages forever). Its
+`.spaces/<id>` line stays (`owner` for a page outside a space), so the old link
+can be republished only by whoever could write the page before, never claimed
+by someone else.
+
 | Method & path | Auth | |
 |---|---|---|
 | `POST /api/records/v1/pages` | page owner, or member of `space` | create, or overwrite the same `id` |
 | `PATCH /api/records/v1/pages/{id}` | page owner, or member of the page's space | replace `html` and/or set `space` |
 | `DELETE /api/records/v1/pages/{id}` | same | |
-| `GET /api/pages/{id}` | none | the bytes, `text/html; charset=utf-8`, inline |
+| `GET /api/pages/{id}` | none | the file, `text/html; charset=utf-8`, inline (for development; in production the web server serves the directory) |
 
 ```json
 { "id": "3f1a2b3c-0000-4000-8000-000000000001",
@@ -225,8 +252,8 @@ See [docs/benchmarks.md](docs/benchmarks.md) for the method and the numbers.
 - **No admin UI and no generic Record API.** Administration is the CLI
   subcommands above plus plain SQL on `data/imagebase.db`. It has no
   TrailBase-only SQL functions, so the stock `sqlite3` works.
-- **Pages are stored in the database row**, not an object store. S3 isn't
-  supported.
+- **Pages are files in `--pages-dir`**, served by the web server, not rows in
+  an object store. S3 isn't supported.
 - **Tokens are HS256** (a secret in `secrets/jwt.key`), not EdDSA. The claim
   set is the same.
 - **Refresh tokens and mailed codes are stored only as SHA-256 hashes.**

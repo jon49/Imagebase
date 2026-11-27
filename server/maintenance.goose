@@ -3,6 +3,8 @@ import std;
 import exception;
 import .util;
 import .db;
+import .config;
+import .pages;
 
 struct Migration { name: const u8[:], sql: const u8[:] }
 
@@ -10,10 +12,37 @@ struct Migration { name: const u8[:], sql: const u8[:] }
 let MIGRATIONS = [
     Migration { name: "0001_schema", sql: embed_file("migrations/0001_schema.sql") },
     Migration { name: "0002_single_app", sql: embed_file("migrations/0002_single_app.sql") },
+    Migration { name: "0003_pages_to_files", sql: embed_file("migrations/0003_pages_to_files.sql") },
 ];
+
+// Moves published pages out of the database before 0003 drops their table.
+fn export_pages() {
+    var n = 0;
+    {
+        let st = query("SELECT count(*) FROM pages");
+        defer finish(st);
+        if row(st) { n = col_int(st, 0); }
+    }
+    if n == 0 { return; }
+    if CFG.pages_dir.len == 0 {
+        exception::throw(Fail { status: 1, msg: str(
+            "the database holds ", n, " published page(s), which now live as files: ",
+            "run with --pages-dir DIR once so the migration can write them there") });
+    }
+    let st = query("SELECT id, space, html FROM pages");
+    defer finish(st);
+    var html: u8[>..] = [];
+    while row(st) {
+        html.clear();
+        col_append(st, 2, html);
+        store_page(col_id(st, 0), html, !col_is_null(st, 1), col_id(st, 1));
+    }
+    log(str("wrote ", n, " page(s) to ", CFG.pages_dir));
+}
 
 // Checks a database can take a migration; throws a Fail explaining why not.
 fn precheck(name: const u8[:]) {
+    if name == "0003_pages_to_files" { export_pages(); return; }
     if name != "0002_single_app" { return; }
     var apps: u8[>..] = [];
     var n = 0;

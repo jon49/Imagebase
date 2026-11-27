@@ -1,5 +1,6 @@
 // Small shared helpers: errors, UUIDs, base64url, hex, randomness, hashing.
 import std;
+import os;
 import base64;
 import exception;
 
@@ -122,6 +123,14 @@ fn parse_user_id(s: const u8[:]) -> u8[16], bool {
 // --- misc -----------------------------------------------------------------------
 
 fn now() -> i64 { (time() as i64) }
+
+// make_dir for a path and each missing parent, like `mkdir -p`.
+fn make_dirs(path: const u8[:]) -> bool {
+    for ch, i in path {
+        if ch == '/' && i > 0 { make_dir(path[..i]); }
+    }
+    return make_dir(path);
+}
 
 fn ascii_eq_nocase(a: const u8[:], b: const u8[:]) -> bool {
     if a.len != b.len { return false; }

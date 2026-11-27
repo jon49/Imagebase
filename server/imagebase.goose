@@ -194,7 +194,11 @@ thread_fn scheduler() {
         if ib_http_wait_stop(until_prune(now()) * 1000) { break; }
         DB = ib_db_open(db_path(), -1);
         if DB == 0 { log("prune: cannot open the database"); continue; }
-        fn job() { log(str("prune: deleted ", prune(), " overwritten row(s)")); }
+        fn job() {
+            log(str("prune: deleted ", prune(), " overwritten row(s)"));
+            let pages = prune_pages();
+            if pages > 0 { log(str("prune: deleted ", pages, " page(s) not written for ", CFG.pages_max_age, " days")); }
+        }
         exception::try<Fail>(job) { e => rollback_if_open(); log(str("prune failed: ", e.msg)); };
         ib_db_close(DB);
     }
@@ -214,7 +218,8 @@ fn usage() {
 
           serve                      run the HTTP server (default)
           migrate                    create or upgrade the database and exit
-          prune                      delete overwritten sync rows older than a month
+          prune                      delete overwritten sync rows older than a month, and
+                             (with --pages-dir) pages past --pages-max-age
           user list                  list accounts
           user verify <email>        mark an account's email as verified
           user delete <email>        delete an account (as the API's self-delete does)
@@ -237,19 +242,15 @@ fn usage() {
                               (default /_/auth/reset_password/update/{code}, the built-in form)
           --verify-url URL    email-verification link, the same way
                               (default /api/auth/v1/verify_email/confirm/{code})
+          --pages-dir DIR     publish pages as DIR/<id>.html, for the web server to
+                              serve (default: none, publishing off)
+          --pages-max-age N   the nightly prune deletes pages not written for N days
+                              (default 90; 0 keeps them)
           --cors ORIGIN       allowed CORS origin, '*' for any (default), '' for none
           --auth-ttl SECS     auth token lifetime (default 3600)
           --refresh-ttl SECS  refresh token lifetime (default 2592000)
           --access-log        log every request to stderr
         """);
-}
-
-// make_dir for a path and each missing parent, like `mkdir -p`.
-fn make_dirs(path: const u8[:]) -> bool {
-    for ch, i in path {
-        if ch == '/' && i > 0 { make_dir(path[..i]); }
-    }
-    return make_dir(path);
 }
 
 fn int_arg(v: const u8[:]) -> i64 {
@@ -379,6 +380,7 @@ fn main() {
     set(CFG.verify_url, "/api/auth/v1/verify_email/confirm/{code}");
     CFG.auth_ttl = 3600;
     CFG.refresh_ttl = 30 * 86400;
+    CFG.pages_max_age = 90;
 
     let argv = args();
     var rest: const u8[:][>..] = [];
@@ -403,6 +405,8 @@ fn main() {
         else if a == "--cors" { set(CFG.cors_origin, next()); }
         else if a == "--reset-url" { set(CFG.reset_url, next()); }
         else if a == "--verify-url" { set(CFG.verify_url, next()); }
+        else if a == "--pages-dir" { set(CFG.pages_dir, next()); }
+        else if a == "--pages-max-age" { CFG.pages_max_age = int_arg(next()); }
         else if a == "--workers" { CFG.workers = int_arg(next()); }
         else if a == "--auth-ttl" { CFG.auth_ttl = int_arg(next()); }
         else if a == "--refresh-ttl" { CFG.refresh_ttl = int_arg(next()); }
@@ -415,6 +419,10 @@ fn main() {
     if CFG.mail_from.len == 0 { set(CFG.mail_from, str(CFG.app_name, " <noreply@localhost>")); }
 
     if !make_dirs(CFG.data_dir) { abort(str("cannot create ", CFG.data_dir)); }
+    while CFG.pages_dir.len > 1 && CFG.pages_dir[CFG.pages_dir.len - 1] == '/' { CFG.pages_dir.pop(); }
+    if CFG.pages_dir.len > 0 && !make_dirs(str(CFG.pages_dir, "/.spaces")) {
+        abort(str("cannot create ", CFG.pages_dir, "/.spaces"));
+    }
     DB = ib_db_open(db_path(), -1);
     if DB == 0 { exit(1); }
     var code = 0;
@@ -431,6 +439,9 @@ fn main() {
         } else if cmd == "migrate" {
         } else if cmd == "prune" {
             print("deleted ", prune(), " overwritten row(s)");
+            if CFG.pages_dir.len > 0 {
+                print("deleted ", prune_pages(), " page(s) not written for ", CFG.pages_max_age, " days");
+            }
         } else if cmd == "user" && rest.len == 2 && rest[1] == "list" {
             list_users();
         } else if cmd == "user" && rest.len == 3 {

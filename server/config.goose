@@ -12,6 +12,8 @@ struct Config {
     cors_origin: u8[..512],     // "*" echoes any Origin; "" sends no CORS headers
     reset_url: u8[..512],       // mailed reset link; {code} is the code, a leading / means site_url + it
     verify_url: u8[..512],      // mailed verification link, the same way
+    pages_dir: u8[..1024],      // where published pages are written; "" turns publishing off
+    pages_max_age: i64,         // days without a write before the nightly prune deletes a page; 0 never
     dev: bool,
     access_log: bool,
     workers: i64,

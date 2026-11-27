@@ -23,7 +23,7 @@ all of them.
 | the app's `user_data` | `user_data` | same ids and AUTOINCREMENT high-water mark, so `lastSyncedId` and space cursors stay valid |
 | the app's `spaces`, `space_members`, `space_invites` | same tables | open invite codes keep working until they expire |
 | the app's `app_owners` row | `page_owner` | the one account that may publish pages outside a space |
-| the app's `pages` + `uploads/<object id>` | `pages` | the file bytes move into the row; served at `/api/pages/<id>` |
+| the app's `pages` + `uploads/<object id>` | files in `--pages-dir` | the importer's `--pages-dir` (the server's) gets `<id>.html` per page, served at `/api/pages/<id>` |
 | `_session` (session.db) | — | users log in again: TrailBase's tokens were signed with its own key |
 | pending verification / reset codes | — | ask anyone mid-reset to request a new link |
 | `admin@localhost` | — | TrailBase's auto-created admin; skipped unless `--keep-admin-localhost` |

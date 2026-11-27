@@ -51,7 +51,8 @@ echo "--- building server ---"
 (cd .. && make build >/dev/null)
 
 echo "--- starting imagebase on $TEST_URL ---"
-ib --address "localhost:$TEST_PORT" --dev >"$LOG_FILE" 2>&1 &
+PAGES="$DATA_DIR/pages"
+ib --address "localhost:$TEST_PORT" --dev --pages-dir "$PAGES" >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 
 for _ in $(seq 1 100); do
@@ -137,6 +138,15 @@ ib owner set "$email" >/dev/null
 echo "--- publish page: create / fetch inline / overwrite / authz ---"
 run_hurl --variable "token=$token" --variable "token_b=$token_b" publish-page.tests.hurl
 
+# Pages are files in --pages-dir, which nginx serves in production. The page
+# owner's page has no space.
+p1="$PAGES/11111111-1111-1111-1111-111111111111.html"
+if ! grep -q "PUBLISHED-V2" "$p1" || [ -e "$PAGES/.spaces/11111111-1111-1111-1111-111111111111" ]; then
+    echo "FAIL: the owner's page isn't $p1 with no space file"
+    exit 1
+fi
+echo "page file assertions passed (owner page on disk, no space)"
+
 # Spaces tests count A's personal rows from scratch.
 sqlite3 "$DB" "DELETE FROM user_data WHERE user = (SELECT id FROM _user WHERE email = '$email');"
 
@@ -151,6 +161,39 @@ sqlite3 "$DB" "
 
 echo "--- spaces: shared sync + space-member page publishing ---"
 run_hurl --variable "token=$token" --variable "token_b=$token_b" spaces.tests.hurl
+
+# The space member's page records its space beside it; the refused writes
+# left nothing behind.
+space_of=$(cat "$PAGES/.spaces/88888888-8888-8888-8888-888888888888" 2>/dev/null || true)
+if [ "$space_of" != "55555555-5555-5555-5555-555555555555" ] || ! grep -q "SHARED-A" "$PAGES/88888888-8888-8888-8888-888888888888.html" \
+   || [ -e "$PAGES/99999999-9999-9999-9999-999999999999.html" ] || grep -q HIJACK "$p1" \
+   || [ -e "$PAGES/77777777-7777-4777-8777-777777777777.html" ] || [ -e "$PAGES/.spaces/77777777-7777-4777-8777-777777777777" ]; then
+    echo "FAIL: space page files are wrong (space=$space_of)"
+    exit 1
+fi
+echo "space page file assertions passed"
+
+# Pages expire --pages-max-age (90) days after their last write. Age two, keep
+# one fresh, prune, and check what's left.
+echo "--- pages: expiry after 90 days without a write ---"
+p8="$PAGES/88888888-8888-8888-8888-888888888888.html"
+touch -d '100 days ago' "$p1" "$p8"
+curl -sf -o /dev/null -X POST "$TEST_URL/api/records/v1/pages" -H "Authorization: Bearer $token" \
+    -H 'Content-Type: application/json' \
+    -d '{"id":"cccccccc-cccc-4ccc-8ccc-cccccccccccc","html":{"filename":"f.html","content_type":"text/html","data":"PGgxPkZSRVNIPC9oMT4="}}'
+ib --pages-dir "$PAGES" prune
+fresh=$(find "$PAGES" -maxdepth 1 -name '*.html' | wc -l)
+if [ -e "$p1" ] || [ -e "$p8" ] || [ ! -e "$PAGES/cccccccc-cccc-4ccc-8ccc-cccccccccccc.html" ] || [ "$(cat "$PAGES/.spaces/11111111-1111-1111-1111-111111111111")" != "owner" ] \
+   || [ "$(cat "$PAGES/.spaces/88888888-8888-8888-8888-888888888888")" != "55555555-5555-5555-5555-555555555555" ]; then
+    echo "FAIL: expired pages weren't deleted with their owners kept"
+    exit 1
+fi
+echo "page expiry assertions passed (2 expired, $fresh fresh left, owners kept)"
+run_hurl --variable "token=$token" --variable "token_b=$token_b" page-expiry.tests.hurl
+if [ -e "$PAGES/.spaces/11111111-1111-1111-1111-111111111111" ]; then
+    echo "FAIL: the owner's republished page still has an owner marker"
+    exit 1
+fi
 
 echo "--- spaces: create / invite / accept / remove / leave ---"
 spaces_before=$(sqlite3 "$DB" "SELECT COUNT(*) FROM spaces;")
