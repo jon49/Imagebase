@@ -1,10 +1,12 @@
 # Migrating a deployment from TrailBase
 
 This guide moves a running ImageBase deployment from the TrailBase + WASM
-server (up to commit `e444c51`) to the Goose server. Frontends need no changes:
-the paths with an app id they call are still served. Users keep their
+server (up to commit `e444c51`) to the Goose server. The paths lose their app
+id (`/api/data/soccer` becomes `/api/data` on soccer's own server), so deploy
+frontends built for the new paths at the same time. Users keep their
 passwords, sync data, spaces and published pages. They have to log in once
-more after the switch.
+more after the switch. Schedule links handed out before the switch
+(`/api/pages/soccer/<id>`) stop working; republishing gives the new link.
 
 A TrailBase depot could serve several frontends, each under its own app id.
 A Goose server serves one, so each app gets its own data dir and server
@@ -21,7 +23,7 @@ all of them.
 | the app's `user_data` | `user_data` | same ids and AUTOINCREMENT high-water mark, so `lastSyncedId` and space cursors stay valid |
 | the app's `spaces`, `space_members`, `space_invites` | same tables | open invite codes keep working until they expire |
 | the app's `app_owners` row | `page_owner` | the one account that may publish pages outside a space |
-| the app's `pages` + `uploads/<object id>` | `pages` | the file bytes move into the row; old `/api/pages/<app>/<id>` links still work |
+| the app's `pages` + `uploads/<object id>` | `pages` | the file bytes move into the row; served at `/api/pages/<id>` |
 | `_session` (session.db) | — | users log in again: TrailBase's tokens were signed with its own key |
 | pending verification / reset codes | — | ask anyone mid-reset to request a new link |
 | `admin@localhost` | — | TrailBase's auto-created admin; skipped unless `--keep-admin-localhost` |
@@ -94,7 +96,7 @@ TLS is not built in. If `trail` was serving HTTPS directly, put a reverse proxy
    03:30 UTC, so no cron job is needed.
 
 5. **Check**: log in, sync, fetch a published page
-   (`GET /api/pages/<id>`, and an old `/api/pages/<app>/<id>` link), and request a password reset to confirm mail
+   (`GET /api/pages/<id>`), and request a password reset to confirm mail
    gets delivered.
 
 ## Rolling back

@@ -9,9 +9,10 @@ TrailBase build and any rewrite as long as the wire API matches.
              --read-tokens a,b --write-tokens c,d --empty-tokens e,f \
              --page-id <uuid> [--duration 10] [--concurrency 8]
 
-Each scenario uses its own users, so their data sets don't mix. Requests go
-to /api/data/bench and /api/pages/bench/{id}: the TrailBase server needs the
-app segment, and the current server accepts it and ignores it.
+Each scenario uses its own users, so their data sets don't mix. With
+--app-paths, requests carry the app id `bench` (/api/data/bench,
+/api/pages/bench/{id}), as the TrailBase server needs; the current server
+serves one app and takes /api/data and /api/pages/{id}.
 
 Results are printed as a table and written as JSON to --out.
 """
@@ -151,12 +152,15 @@ def main():
     ap.add_argument("--empty-tokens", required=True, help="tokens of users with no data")
     ap.add_argument("--login", default="", help="email:password for the login scenario")
     ap.add_argument("--page-id", default="")
+    ap.add_argument("--app-paths", action="store_true", help="TrailBase-style paths with an app id")
     ap.add_argument("--duration", type=float, default=10)
     ap.add_argument("--concurrency", type=int, default=8)
     ap.add_argument("--label", default="server")
     ap.add_argument("--out", default="")
     a = ap.parse_args()
 
+    app = "bench/" if a.app_paths else ""
+    data_path = f"/api/data/{app}".rstrip("/")
     read_tokens, write_tokens, empty_tokens = (
         a.read_tokens.split(","), a.write_tokens.split(","), a.empty_tokens.split(","))
     auth = lambda t: {"Authorization": f"Bearer {t}", "Content-Type": "application/json"}
@@ -168,18 +172,18 @@ def main():
     scenarios = []
     if a.page_id:
         scenarios.append(("page GET (public)",
-                          [("GET", f"/api/pages/bench/{a.page_id}", {}, None)]))
+                          [("GET", f"/api/pages/{app}{a.page_id}", {}, None)]))
     # Writes: each request inserts 10 rows and returns them as `saved`.
     scenarios.append(("sync write 10 rows", [
-        ("POST", "/api/data/bench", auth(write_tokens[i % len(write_tokens)]), sync_body(i, 10))
+        ("POST", data_path, auth(write_tokens[i % len(write_tokens)]), sync_body(i, 10))
         for i in range(256)]))
     # Reads: no new rows, cursor 0 => returns every latest row of the app (populated
     # in setup) — exercises the ROW_NUMBER() window query and JSON encoding.
     scenarios.append(("sync read 200 rows", [
-        ("POST", "/api/data/bench", auth(t), json.dumps({"lastSyncedId": 0}))
+        ("POST", data_path, auth(t), json.dumps({"lastSyncedId": 0}))
         for t in read_tokens]))
     scenarios.append(("sync empty (auth only)", [
-        ("POST", "/api/data/bench", auth(t), json.dumps({"lastSyncedId": 0}))
+        ("POST", data_path, auth(t), json.dumps({"lastSyncedId": 0}))
         for t in empty_tokens]))
     if a.login:
         email, pw = a.login.split(":", 1)

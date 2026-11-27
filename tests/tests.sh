@@ -166,7 +166,7 @@ fi
 # Expiry can't be fast-forwarded over HTTP: mint a space, plant an already
 # expired invite next to a live one, and check only the live one is accepted.
 echo "--- spaces: expired invites are refused ---"
-expiry_space=$(curl -sf -X POST "$TEST_URL/api/spaces/invite-test" -H "Authorization: Bearer $token" \
+expiry_space=$(curl -sf -X POST "$TEST_URL/api/spaces" -H "Authorization: Bearer $token" \
     | python3 -c 'import json,sys;print(json.load(sys.stdin)["space"].replace("-",""))')
 sqlite3 "$DB" "
     INSERT INTO space_invites (code, space, created_by, expires)
@@ -174,9 +174,9 @@ sqlite3 "$DB" "
     INSERT INTO space_invites (code, space, created_by, expires)
       SELECT X'bbbbbbbbbbbb4bbb8bbbbbbbbbbbbbbb', X'$expiry_space', id, UNIXEPOCH() + 60 FROM _user WHERE email = '$email';"
 expired_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $token_b" \
-    "$TEST_URL/api/invites/invite-test/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/accept")
+    "$TEST_URL/api/invites/aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa/accept")
 live_status=$(curl -s -o /dev/null -w '%{http_code}' -X POST -H "Authorization: Bearer $token_b" \
-    "$TEST_URL/api/invites/invite-test/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/accept")
+    "$TEST_URL/api/invites/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb/accept")
 if [ "$expired_status" != "404" ] || [ "$live_status" != "200" ]; then
     echo "FAIL: invite expiry (expired=$expired_status, expect 404; live=$live_status, expect 200)"
     exit 1
@@ -234,9 +234,6 @@ if [ "$after" != "3" ] || [ "$old_left" != "1" ] || [ "$recent_left" != "2" ]; t
     exit 1
 fi
 echo "prune assertions passed (deleted the aged overwrite, kept latest + recent)"
-
-echo "--- old app-scoped paths still route ---"
-run_hurl --variable "token=$token" legacy-paths.tests.hurl
 
 echo "--- logout flow ---"
 run_hurl logout.tests.hurl

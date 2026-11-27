@@ -25,30 +25,8 @@ import .maintenance;
 
 // --- routing -------------------------------------------------------------------
 
-// The paths of the multi-app server carried the app id as their third
-// segment (/api/data/{app}, /api/pages/{app}/{id}, ...). Installed clients
-// and already-shared page links still use them, so they are accepted: the
-// segment is dropped and the path routed as the current one.
-fn legacy_app_segment(seg: const u8[:][:]) -> bool {
-    let n = seg.len;
-    guard n >= 3 && seg[0] == "api" else { return false; }
-    let area = seg[1];
-    if area == "data" { return n == 3; }
-    if area == "pages" { return n == 4; }
-    if area == "spaces" {
-        return n == 3 || n == 6 || (n == 5 && (seg[4] == "members" || seg[4] == "invites"));
-    }
-    if area == "invites" { return n == 5 || (n == 4 && seg[3] != "accept"); }
-    return false;
-}
-
 fn route(c: Ctx&) {
-    let all = segments(c.path);
-    var seg: const u8[:][>..] = [];
-    let legacy = legacy_app_segment(all);
-    for s, i in all {
-        if !(legacy && i == 2) { seg.push(s); }
-    }
+    let seg = segments(c.path);
     let n = seg.len;
     let m = c.method;
     guard n >= 2 && seg[0] == "api" || n >= 1 && seg[0] == "_" else { fail(404, "Not found"); }
@@ -254,6 +232,11 @@ fn usage() {
           --sendmail CMD      sendmail-compatible command (default /usr/sbin/sendmail)
           --mail-from ADDR    From: address of outgoing mail
           --app-name NAME     product name used in emails (default ImageBase)
+          --reset-url URL     password-reset link mailed out; {code} is replaced by the
+                              code, and a leading / puts --site-url in front
+                              (default /_/auth/reset_password/update/{code}, the built-in form)
+          --verify-url URL    email-verification link, the same way
+                              (default /api/auth/v1/verify_email/confirm/{code})
           --cors ORIGIN       allowed CORS origin, '*' for any (default), '' for none
           --auth-ttl SECS     auth token lifetime (default 3600)
           --refresh-ttl SECS  refresh token lifetime (default 2592000)
@@ -392,6 +375,8 @@ fn main() {
     set(CFG.sendmail, "/usr/sbin/sendmail");
     set(CFG.app_name, "ImageBase");
     set(CFG.cors_origin, "*");
+    set(CFG.reset_url, "/_/auth/reset_password/update/{code}");
+    set(CFG.verify_url, "/api/auth/v1/verify_email/confirm/{code}");
     CFG.auth_ttl = 3600;
     CFG.refresh_ttl = 30 * 86400;
 
@@ -416,6 +401,8 @@ fn main() {
         else if a == "--mail-from" { set(CFG.mail_from, next()); }
         else if a == "--app-name" { set(CFG.app_name, next()); }
         else if a == "--cors" { set(CFG.cors_origin, next()); }
+        else if a == "--reset-url" { set(CFG.reset_url, next()); }
+        else if a == "--verify-url" { set(CFG.verify_url, next()); }
         else if a == "--workers" { CFG.workers = int_arg(next()); }
         else if a == "--auth-ttl" { CFG.auth_ttl = int_arg(next()); }
         else if a == "--refresh-ttl" { CFG.refresh_ttl = int_arg(next()); }

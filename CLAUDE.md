@@ -8,9 +8,9 @@ ImageBase's backend: one [Goose](https://github.com/aardappel/goose) program (`s
 plus a little C (`server/native/`) for sockets, SQLite, crypto and sendmail. It replaced
 a TrailBase + Rust/WASM version (last at commit `e444c51`) and keeps its wire format.
 One server (process and data dir) serves one application: nothing is namespaced
-by app. The old `/api/<area>/{app}/...` paths are still routed, with that segment
-dropped (`legacy_app_segment` in imagebase.goose), for installed clients and shared
-page links. The README documents the API.
+by app, and the TrailBase-era `/api/<area>/{app}/...` paths are gone (only soccer
+and weight use ImageBase, and both call the new ones). Production runs one
+instance per app behind nginx. The README documents the API.
 
 ## Commands
 

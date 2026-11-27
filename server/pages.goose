@@ -86,7 +86,6 @@ fn read_upload(c: Ctx&, html: u8[>..]&) -> Upload {
         u.id = id;
         u.has_id = true;
     }
-    // "app" from clients of the multi-app server is accepted and ignored.
     let sp = json::member(root, "space");
     if sp {
         let s, is_str = json::as_string(sp);

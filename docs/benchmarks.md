@@ -27,8 +27,9 @@ process from `/proc`: CPU time (utime+stime) and RSS every 50 ms.
 | sync empty (auth only) | `POST /api/data/bench` by the empty group: JWT check, user lookup, membership query, empty pull |
 | login (password hash) | `POST /api/auth/v1/login`: Argon2id with m=19456 KiB, t=2, p=1 on both |
 
-The paths carry an app id (`bench`) because the TrailBase server requires
-one. The current server serves one app and accepts the id and ignores it.
+Against TrailBase the paths carry an app id (`bench`, `--app-paths`), as it
+requires; the current server serves one app and takes `/api/data` and
+`/api/pages/{id}`.
 
 The numbers below were measured before the server dropped its `app`
 namespace. Back then the runners kept the data sets apart with three app ids

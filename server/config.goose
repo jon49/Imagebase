@@ -10,6 +10,8 @@ struct Config {
     mail_from: u8[..256],
     app_name: u8[..64],
     cors_origin: u8[..512],     // "*" echoes any Origin; "" sends no CORS headers
+    reset_url: u8[..512],       // mailed reset link; {code} is the code, a leading / means site_url + it
+    verify_url: u8[..512],      // mailed verification link, the same way
     dev: bool,
     access_log: bool,
     workers: i64,

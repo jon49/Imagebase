@@ -12,3 +12,6 @@ guests/
 
 # Benchmark scratch output other than the committed results.
 bench/*.log
+
+# tasks/source-bundle.sh output
+dist/

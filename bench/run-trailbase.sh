@@ -54,13 +54,13 @@ done
 csv() { local IFS=,; echo "$*"; }
 READ=$(csv "${TOKENS[@]:0:4}"); WRITE=$(csv "${TOKENS[@]:4:4}"); EMPTY=$(csv "${TOKENS[@]:8:4}")
 
-"$BENCH/seed.py" "$URL" "$READ"
+"$BENCH/seed.py" "$URL" "$READ" /api/data/bench
 
 PAGE_ID=0b0b0b0b-0000-4000-8000-000000000001
 curl -sf -o /dev/null -X POST "$URL/api/records/v1/pages" -H "Authorization: Bearer ${TOKENS[0]}" \
     -H 'Content-Type: application/json' \
     -d "{\"id\":\"$PAGE_ID\",\"app\":\"bench\",\"html\":{\"filename\":\"index.html\",\"content_type\":\"text/html\",\"data\":\"$(python3 -c 'import base64;print(base64.b64encode(b"<!doctype html><h1>bench</h1>"+b"x"*4000).decode())')\"}}"
 
-python3 "$BENCH/bench.py" --url "$URL" --pid "$PID" --read-tokens "$READ" --write-tokens "$WRITE" --empty-tokens "$EMPTY" \
+python3 "$BENCH/bench.py" --url "$URL" --pid "$PID" --read-tokens "$READ" --write-tokens "$WRITE" --empty-tokens "$EMPTY" --app-paths \
     --login "bench1@example.com:$PW" --page-id "$PAGE_ID" \
     --label "trailbase $(trail --version | head -1 | awk '{print $2}')" "$@"

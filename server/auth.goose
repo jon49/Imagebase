@@ -209,9 +209,16 @@ fn register(c: Ctx&) {
 
     if !exists {
         var body: u8[>..] = [];
-        format(body, "Welcome to ", CFG.app_name, ".\n\nConfirm your email address by opening this link:\n\n",
-               CFG.site_url, "/api/auth/v1/verify_email/confirm/", code, "\n\nThe link is valid for 24 hours.\n");
-        send_mail(f.email, "Confirm your email address", body);
+        var link: u8[>..] = [];
+        format_link(link, CFG.verify_url, code);
+        body.append("<html>\n<body>\n  <h1>Welcome!</h1>\n  <p>Thanks for joining ");
+        html_escape(body, CFG.app_name);
+        body.append(". Please verify ");
+        html_escape(body, f.email);
+        body.append(" by clicking the link below before logging in. The link is valid for 24 hours.</p>\n");
+        link_paragraphs(body, link, "Verify your email");
+        body.append("</body>\n</html>\n");
+        send_mail(f.email, str("Verify your email for ", CFG.app_name), body);
     }
     text(c, "registered");
 }
@@ -232,7 +239,11 @@ fn verify_email(c: Ctx&, code: const u8[:]) {
     let ok = changes() == 1;
     commit();
     if !ok { fail(400, "Invalid token"); }
-    page(c, "Email verified", "<p>Your email address is confirmed. You can now log in.</p>");
+    var msg: u8[>..] = [];
+    msg.append("<p>Your email address is confirmed. You can now <a href=\"");
+    html_escape(msg, CFG.site_url);
+    msg.append("/\">log in</a>.</p>");
+    page(c, "Email verified", msg);
 }
 
 // --- login / sessions -----------------------------------------------------------
@@ -465,11 +476,15 @@ fn reset_request(c: Ctx&) {
     if too_soon { fail(429, "Too many requests"); }
     if recipient.len > 0 {
         var body: u8[>..] = [];
-        format(body, "Someone asked to reset the password of your ", CFG.app_name, " account.\n\n",
-               "To choose a new password, open this link within the next hour:\n\n",
-               CFG.site_url, "/_/auth/reset_password/update/", code,
-               "\n\nIf it wasn't you, ignore this email; your password stays as it is.\n");
-        send_mail(recipient, "Reset your password", body);
+        var link: u8[>..] = [];
+        format_link(link, CFG.reset_url, code);
+        body.append("<html>\n<body>\n  <h1>Password Reset</h1>\n  <p>We received a request to reset the password for ");
+        html_escape(body, recipient);
+        body.append(". Click the link below within the next hour to choose a new password. ");
+        body.append("If you didn't request this, you can safely ignore this email.</p>\n");
+        link_paragraphs(body, link, "Reset your password");
+        body.append("</body>\n</html>\n");
+        send_mail(recipient, str("Reset your ", CFG.app_name, " password"), body);
     }
     text(c, "Password reset email sent");
 }
@@ -561,6 +576,25 @@ fn page(c: Ctx&, title: const u8[:], content: const u8[:]) {
     c.out.append("</h1>");
     c.out.append(content);
     c.ctype = HTML;
+}
+
+// A mailed link: `template` with {code} replaced by the code, and the site
+// URL in front when the template is a path (starts with '/').
+fn format_link(out: u8[>..]&, template: const u8[:], code: const u8[:]) {
+    if template.len > 0 && template[0] == '/' { out.append(CFG.site_url); }
+    format_replaced(out, template, "{code}", code);
+}
+
+// The link as a button-style anchor, then spelled out for mail clients that
+// don't make it clickable.
+fn link_paragraphs(body: u8[>..]&, link: const u8[:], label: const u8[:]) {
+    body.append("  <p><a href=\"");
+    html_escape(body, link);
+    body.append("\">");
+    html_escape(body, label);
+    body.append("</a></p>\n  <p>If the link doesn't work, paste this URL into your browser:<br>\n    ");
+    html_escape(body, link);
+    body.append("</p>\n");
 }
 
 fn html_escape(out: u8[>..]&, s: const u8[:]) {

@@ -37,12 +37,10 @@ GET {{url}}/api/spaces/{{space}}/members
 Authorization: Bearer {{token_b}}
 HTTP 404
 
-# The paths of the multi-app server, with an app segment, still work.
+# The multi-app server's paths, with an app id, are gone.
 GET {{url}}/api/spaces/soccer/{{space}}/members
 Authorization: Bearer {{token}}
-HTTP 200
-[Asserts]
-jsonpath "$.members" count == 1
+HTTP 404
 
 # 3. A invites. Accepting your own invite is a no-op that leaves it usable.
 POST {{url}}/api/spaces/{{space}}/invites
@@ -68,12 +66,6 @@ jsonpath "$.space" == "{{space}}"
 jsonpath "$.invitedBy" == "{{email}}"
 jsonpath "$.member" == false
 
-# The same preview by the old path, with an app segment.
-GET {{url}}/api/invites/soccer/{{code}}
-Authorization: Bearer {{token_b}}
-HTTP 200
-[Asserts]
-jsonpath "$.member" == false
 
 # 5. B accepts; the code is then spent.
 POST {{url}}/api/invites/{{code}}/accept

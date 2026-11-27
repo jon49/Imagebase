@@ -14,9 +14,8 @@ generic record APIs are gone (see
 **One server per application.** The TrailBase version let several frontends
 share one server, with an `{app}` id in every path. Since a server now idles
 at about 7 MB, each app gets its own server process and data dir instead, and
-nothing is namespaced. The old `{app}` paths still work (see
-[Paths with an app id](#paths-with-an-app-id)), so existing clients and
-shared links keep working.
+nothing is namespaced. The `{app}` segment is gone from the paths too:
+`/api/data/soccer` is now `/api/data` on soccer's own server.
 Idle RSS went from about 100 MB to 7 MB, and CPU per request is 6–70x lower
 except for password hashing; see [docs/benchmarks.md](docs/benchmarks.md).
 
@@ -198,15 +197,6 @@ fields `id`, `space` and a file field `html`. Create returns
 `{"ids": ["<base64 id>"]}`. Anyone else gets `403`, including callers with no
 token. The page owner is one account, set with `imagebase owner set <email>`.
 A space member can't overwrite a page that belongs to another space or to none.
-
-### Paths with an app id
-
-The paths of the multi-app server, with the app id as their third segment,
-are still accepted: the server drops that segment and serves the current
-route. So `/api/data/soccer`, `/api/spaces/soccer/{space}/members`,
-`/api/invites/soccer/{code}/accept` and the public `/api/pages/soccer/{id}`
-links already handed out all keep working, whatever the id says. An `"app"`
-field in a page upload is ignored.
 
 ## Tests
 
