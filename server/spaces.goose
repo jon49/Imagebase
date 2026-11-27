@@ -19,16 +19,8 @@ fn uuid_param(s: const u8[:], name: const u8[:]) -> u8[16] {
     return id;
 }
 
-fn require_member(app: const u8[:], space: const u8[:], user: const u8[:]) {
-    let st = query("""
-        SELECT 1 FROM space_members m JOIN spaces s ON s.id = m.space
-          WHERE m.space = ?1 AND m.user = ?2 AND s.app = ?3
-        """);
-    defer finish(st);
-    bind_blob(st, 1, space);
-    bind_blob(st, 2, user);
-    bind_text(st, 3, app);
-    if !row(st) { fail(404, "no such space"); }
+fn require_member(space: const u8[:], user: const u8[:]) {
+    if !is_member(space, user) { fail(404, "no such space"); }
 }
 
 fn is_member(space: const u8[:], user: const u8[:]) -> bool {
@@ -43,17 +35,16 @@ fn is_member(space: const u8[:], user: const u8[:]) -> bool {
     return yes;
 }
 
-// POST /api/spaces/{app} -> {"space": "<uuid>"}. The caller is the first member.
-fn create_space(c: Ctx&, app: const u8[:]) {
+// POST /api/spaces -> {"space": "<uuid>"}. The caller is the first member.
+fn create_space(c: Ctx&) {
     let user = caller_id(c);
     let space = new_uuid();
     begin_write();
     {
-        let st = query("INSERT INTO spaces (id, app, created_by) VALUES (?1, ?2, ?3)");
+        let st = query("INSERT INTO spaces (id, created_by) VALUES (?1, ?2)");
         defer finish(st);
         bind_blob(st, 1, space);
-        bind_text(st, 2, app);
-        bind_blob(st, 3, user);
+        bind_blob(st, 2, user);
         run(st);
     }
     {
@@ -70,12 +61,12 @@ fn create_space(c: Ctx&, app: const u8[:]) {
     c.ctype = JSON;
 }
 
-// GET /api/spaces/{app}/{space}/members -> {"members": [{"user","email","joined","me"}]}
-fn list_members(c: Ctx&, app: const u8[:], space_s: const u8[:]) {
+// GET /api/spaces/{space}/members -> {"members": [{"user","email","joined","me"}]}
+fn list_members(c: Ctx&, space_s: const u8[:]) {
     let user = caller_id(c);
     let space = uuid_param(space_s, "space");
     begin();
-    require_member(app, space, user);
+    require_member(space, user);
     let st = query("""
         SELECT m.user, u.email, m.joined FROM space_members m JOIN _user u ON u.id = m.user
           WHERE m.space = ?1 ORDER BY m.joined, u.email
@@ -103,10 +94,10 @@ fn list_members(c: Ctx&, app: const u8[:], space_s: const u8[:]) {
     c.ctype = JSON;
 }
 
-// DELETE /api/spaces/{app}/{space}/members/{user|me}. Removing the last member
+// DELETE /api/spaces/{space}/members/{user|me}. Removing the last member
 // deletes the space and its data; a removed member's open invites are revoked
 // (both via triggers in the schema).
-fn remove_member(c: Ctx&, app: const u8[:], space_s: const u8[:], target_s: const u8[:]) {
+fn remove_member(c: Ctx&, space_s: const u8[:], target_s: const u8[:]) {
     let user = caller_id(c);
     let space = uuid_param(space_s, "space");
     var target = user;
@@ -119,7 +110,7 @@ fn remove_member(c: Ctx&, app: const u8[:], space_s: const u8[:], target_s: cons
         target = id;
     }
     begin_write();
-    require_member(app, space, user);
+    require_member(space, user);
     let st = query("DELETE FROM space_members WHERE space = ?1 AND user = ?2");
     defer finish(st);
     bind_blob(st, 1, space);
@@ -131,12 +122,12 @@ fn remove_member(c: Ctx&, app: const u8[:], space_s: const u8[:], target_s: cons
     c.ctype = JSON;
 }
 
-// POST /api/spaces/{app}/{space}/invites -> {"code": "<uuid>", "expires": <unix secs>}.
-fn create_invite(c: Ctx&, app: const u8[:], space_s: const u8[:]) {
+// POST /api/spaces/{space}/invites -> {"code": "<uuid>", "expires": <unix secs>}.
+fn create_invite(c: Ctx&, space_s: const u8[:]) {
     let user = caller_id(c);
     let space = uuid_param(space_s, "space");
     begin_write();
-    require_member(app, space, user);
+    require_member(space, user);
     // Invites are only created here, so this keeps dead codes from piling up.
     exec("DELETE FROM space_invites WHERE expires < UNIXEPOCH()");
     let code = new_uuid();
@@ -159,25 +150,23 @@ fn create_invite(c: Ctx&, app: const u8[:], space_s: const u8[:]) {
     c.ctype = JSON;
 }
 
-// The space a live invite code grants for this app; 404 if none.
-fn invite_space(app: const u8[:], code: const u8[:]) -> u8[16] {
+// The space a live invite code grants; 404 if none.
+fn invite_space(code: const u8[:]) -> u8[16] {
     let st = query("""
-        SELECT i.space FROM space_invites i JOIN spaces s ON s.id = i.space
-          WHERE i.code = ?1 AND s.app = ?2 AND i.expires >= UNIXEPOCH()
+        SELECT space FROM space_invites WHERE code = ?1 AND expires >= UNIXEPOCH()
         """);
     defer finish(st);
     bind_blob(st, 1, code);
-    bind_text(st, 2, app);
     if !row(st) { fail(404, "no such invite"); }
     return col_id(st, 0);
 }
 
-// GET /api/invites/{app}/{code} -> {"space","invitedBy","expires","member"}. Doesn't consume.
-fn get_invite(c: Ctx&, app: const u8[:], code_s: const u8[:]) {
+// GET /api/invites/{code} -> {"space","invitedBy","expires","member"}. Doesn't consume.
+fn get_invite(c: Ctx&, code_s: const u8[:]) {
     let user = caller_id(c);
     let code = uuid_param(code_s, "code");
     begin();
-    let space = invite_space(app, code);
+    let space = invite_space(code);
     var email: u8[>..] = [];
     var expires: i64 = 0;
     {
@@ -198,13 +187,13 @@ fn get_invite(c: Ctx&, app: const u8[:], code_s: const u8[:]) {
     c.ctype = JSON;
 }
 
-// POST /api/invites/{app}/{code}/accept -> {"space": "<uuid>"}. An existing member
+// POST /api/invites/{code}/accept -> {"space": "<uuid>"}. An existing member
 // accepting is a no-op that leaves the invite usable for whoever it was meant for.
-fn accept_invite(c: Ctx&, app: const u8[:], code_s: const u8[:]) {
+fn accept_invite(c: Ctx&, code_s: const u8[:]) {
     let user = caller_id(c);
     let code = uuid_param(code_s, "code");
     begin_write();
-    let space = invite_space(app, code);
+    let space = invite_space(code);
     if !is_member(space, user) {
         {
             let st = query("DELETE FROM space_invites WHERE code = ?1");

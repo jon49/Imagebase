@@ -13,19 +13,29 @@ table with `bench/compare.py before.json after.json`. The raw numbers are the
 ## Method
 
 The two runners do the same setup. Each starts the server on a fresh data dir,
-registers and verifies 4 users and logs them in. Each user then gets 200 keys
-written twice (400 rows), and one 4 KB page is published. `bench.py` then drives
-5 scenarios over HTTP/1.1 keep-alive connections. While a scenario runs, it
-samples the server process from `/proc`: CPU time (utime+stime) and RSS every
-50 ms.
+registers, verifies and logs in 12 users in three groups of 4, one group per
+data set. Each user in the read group gets 200 keys written twice (400 rows),
+and one 4 KB page is published. `bench.py` then drives 5 scenarios over
+HTTP/1.1 keep-alive connections. While a scenario runs, it samples the server
+process from `/proc`: CPU time (utime+stime) and RSS every 50 ms.
 
 | scenario | request |
 |---|---|
 | page GET (public) | `GET /api/pages/bench/{id}`, 4 KB of HTML |
-| sync write 10 rows | `POST /api/data/bench-write` from a caught-up client: 10 inserts, `saved` echoed |
-| sync read 200 rows | `POST /api/data/bench-read` with cursor 0: the window query over 400 rows, 200 returned |
-| sync empty (auth only) | `POST /api/data/bench-empty`: JWT check, user lookup, membership query, empty pull |
+| sync write 10 rows | `POST /api/data/bench` by the write group, from a caught-up client: 10 inserts, `saved` echoed |
+| sync read 200 rows | `POST /api/data/bench` by the read group, cursor 0: the window query over 400 rows, 200 returned |
+| sync empty (auth only) | `POST /api/data/bench` by the empty group: JWT check, user lookup, membership query, empty pull |
 | login (password hash) | `POST /api/auth/v1/login`: Argon2id with m=19456 KiB, t=2, p=1 on both |
+
+The paths carry an app id (`bench`) because the TrailBase server requires
+one. The current server serves one app and accepts the id and ignores it.
+
+The numbers below were measured before the server dropped its `app`
+namespace. Back then the runners kept the data sets apart with three app ids
+on 4 users instead of three groups of users, which is the same work per
+request. A 1-second check of each scenario with the current runners and
+server gave the same or lower CPU per request (for example sync read at 8
+clients: 957 µs against 1,544 µs). It was too short to replace these numbers.
 
 The load generator is Python, running on the same machine, so absolute
 throughput is partly bounded by the client and by CPU contention. The most

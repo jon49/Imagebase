@@ -5,8 +5,13 @@ Drives a running server over HTTP and samples the server process's CPU time and
 memory from /proc while each scenario runs, so the same script measures the
 TrailBase build and any rewrite as long as the wire API matches.
 
-    bench.py --url http://localhost:4000 --pid <server pid> --tokens tok1,tok2 \
-             --page-app bench --page-id <uuid> [--duration 10] [--concurrency 8]
+    bench.py --url http://localhost:4000 --pid <server pid> \
+             --read-tokens a,b --write-tokens c,d --empty-tokens e,f \
+             --page-id <uuid> [--duration 10] [--concurrency 8]
+
+Each scenario uses its own users, so their data sets don't mix. Requests go
+to /api/data/bench and /api/pages/bench/{id}: the TrailBase server needs the
+app segment, and the current server accepts it and ignores it.
 
 Results are printed as a table and written as JSON to --out.
 """
@@ -141,9 +146,10 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--url", required=True)
     ap.add_argument("--pid", type=int, required=True)
-    ap.add_argument("--tokens", required=True, help="comma-separated bearer tokens")
+    ap.add_argument("--read-tokens", required=True, help="tokens of the users seed.py filled")
+    ap.add_argument("--write-tokens", required=True, help="tokens of users for the write scenario")
+    ap.add_argument("--empty-tokens", required=True, help="tokens of users with no data")
     ap.add_argument("--login", default="", help="email:password for the login scenario")
-    ap.add_argument("--page-app", default="")
     ap.add_argument("--page-id", default="")
     ap.add_argument("--duration", type=float, default=10)
     ap.add_argument("--concurrency", type=int, default=8)
@@ -151,7 +157,8 @@ def main():
     ap.add_argument("--out", default="")
     a = ap.parse_args()
 
-    tokens = a.tokens.split(",")
+    read_tokens, write_tokens, empty_tokens = (
+        a.read_tokens.split(","), a.write_tokens.split(","), a.empty_tokens.split(","))
     auth = lambda t: {"Authorization": f"Bearer {t}", "Content-Type": "application/json"}
 
     idle = proc_mem_kb(a.pid)
@@ -161,19 +168,19 @@ def main():
     scenarios = []
     if a.page_id:
         scenarios.append(("page GET (public)",
-                          [("GET", f"/api/pages/{a.page_app}/{a.page_id}", {}, None)]))
+                          [("GET", f"/api/pages/bench/{a.page_id}", {}, None)]))
     # Writes: each request inserts 10 rows and returns them as `saved`.
     scenarios.append(("sync write 10 rows", [
-        ("POST", "/api/data/bench-write", auth(tokens[i % len(tokens)]), sync_body(i, 10))
+        ("POST", "/api/data/bench", auth(write_tokens[i % len(write_tokens)]), sync_body(i, 10))
         for i in range(256)]))
     # Reads: no new rows, cursor 0 => returns every latest row of the app (populated
     # in setup) — exercises the ROW_NUMBER() window query and JSON encoding.
     scenarios.append(("sync read 200 rows", [
-        ("POST", "/api/data/bench-read", auth(t), json.dumps({"lastSyncedId": 0}))
-        for t in tokens]))
+        ("POST", "/api/data/bench", auth(t), json.dumps({"lastSyncedId": 0}))
+        for t in read_tokens]))
     scenarios.append(("sync empty (auth only)", [
-        ("POST", "/api/data/bench-empty", auth(t), json.dumps({"lastSyncedId": 0}))
-        for t in tokens]))
+        ("POST", "/api/data/bench", auth(t), json.dumps({"lastSyncedId": 0}))
+        for t in empty_tokens]))
     if a.login:
         email, pw = a.login.split(":", 1)
         scenarios.append(("login (password hash)", [

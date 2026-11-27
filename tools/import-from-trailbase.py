@@ -3,15 +3,22 @@
 
     server/imagebase --data data migrate          # create the empty schema
     python3 tools/import-from-trailbase.py \\
-        --depot traildepot --data data            # --dry-run first to see counts
+        --depot traildepot --data data [--app soccer]   # --dry-run first to see counts
+
+A TrailBase depot could back several frontends, each under its own `app` id;
+a server now serves one. `--app` picks which app's data to import (needed
+only when the depot holds more than one); import each app into a data dir of
+its own and run one server per app.
 
 What carries over, unchanged:
 * `_user` rows: id, email / unverified_email, admin flag, timestamps and the
   Argon2id `password_hash`, so everyone keeps their password.
-* `spaces`, `space_members`, `space_invites`, `app_owners`.
-* `user_data`, with the same ids and the AUTOINCREMENT high-water mark, so
-  clients' `lastSyncedId` and per-space cursors stay valid.
-* `pages`: each row's file is read out of the depot's object store
+  Accounts are shared by every app in a depot, so all of them are copied.
+* The app's `spaces`, with their `space_members` and `space_invites`; its
+  `app_owners` entry becomes the page owner.
+* The app's `user_data`, with the same ids and the AUTOINCREMENT high-water
+  mark, so clients' `lastSyncedId` and per-space cursors stay valid.
+* The app's `pages`: each row's file is read out of the depot's object store
   (`<depot>/uploads/<object id>`) and stored in the row itself.
 
 What does not: sessions (TrailBase's tokens are signed with its own key, so
@@ -30,12 +37,13 @@ import os
 import sqlite3
 import sys
 
+# (table, columns copied, which rows belong to the app being imported)
 COPY_TABLES = [
-    ("spaces", "id, app, created_by, created"),
-    ("space_members", "space, user, joined"),
-    ("space_invites", "code, space, created_by, created, expires"),
-    ("app_owners", "app, owner"),
-    ("user_data", "id, user, space, app, key, value, timestamp"),
+    ("spaces", "id, created_by, created", "app = :app"),
+    ("space_members", "space, user, joined", "space IN (SELECT id FROM spaces WHERE app = :app)"),
+    ("space_invites", "code, space, created_by, created, expires",
+     "space IN (SELECT id FROM spaces WHERE app = :app)"),
+    ("user_data", "id, user, space, key, value, timestamp", "app = :app"),
 ]
 
 
@@ -43,6 +51,7 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     p.add_argument("--depot", default="traildepot", help="TrailBase depot dir (default: traildepot)")
     p.add_argument("--data", default="data", help="imagebase data dir (default: data)")
+    p.add_argument("--app", help="which app's data to import (required if the depot has several)")
     p.add_argument("--dry-run", action="store_true", help="count what would be copied, write nothing")
     p.add_argument("--keep-admin-localhost", action="store_true",
                    help="also copy TrailBase's auto-created admin@localhost account")
@@ -63,6 +72,18 @@ def main() -> int:
         if dst.execute(f"SELECT 1 FROM {t} LIMIT 1").fetchone():
             sys.exit(f"{dst_path} already has rows in {t}; import into a fresh data dir")
 
+    apps = [r[0] for r in src.execute(
+        "SELECT app FROM user_data UNION SELECT app FROM spaces UNION SELECT app FROM pages "
+        "UNION SELECT app FROM app_owners ORDER BY 1")]
+    app = a.app
+    if app is None:
+        if len(apps) > 1:
+            sys.exit(f"the depot holds several apps ({', '.join(apps)}): pick one with --app")
+        app = apps[0] if apps else ""
+    elif apps and app not in apps:
+        sys.exit(f"no app {app!r} in the depot (it has: {', '.join(apps)})")
+    print(f"app: {app or '(none: accounts only)'}")
+
     skip_admin = "" if a.keep_admin_localhost else "WHERE coalesce(email, '') != 'admin@localhost'"
     users = src.execute(f"""
         SELECT id, email, unverified_email, coalesce(password_hash, ''), admin, created, updated
@@ -71,13 +92,15 @@ def main() -> int:
     user_ids = {u[0] for u in users}
 
     rows = {}
-    for table, cols in COPY_TABLES:
-        rows[table] = src.execute(f"SELECT {cols} FROM {table} ORDER BY rowid").fetchall()
+    for table, cols, where in COPY_TABLES:
+        rows[table] = src.execute(f"SELECT {cols} FROM {table} WHERE {where} ORDER BY rowid",
+                                  {"app": app}).fetchall()
+    owner = src.execute("SELECT owner FROM app_owners WHERE app = ?", (app,)).fetchone()
+    owner = owner[0] if owner and owner[0] in user_ids else None
     # Drop references to accounts that weren't copied.
     rows["space_members"] = [r for r in rows["space_members"] if r[1] in user_ids]
     rows["space_invites"] = [r for r in rows["space_invites"] if r[2] in user_ids]
-    rows["app_owners"] = [r for r in rows["app_owners"] if r[1] in user_ids]
-    rows["spaces"] = [(r[0], r[1], r[2] if r[2] in user_ids else None, r[3]) for r in rows["spaces"]]
+    rows["spaces"] = [(r[0], r[1] if r[1] in user_ids else None, r[2]) for r in rows["spaces"]]
     rows["user_data"] = [r for r in ([(i, u if u in user_ids else None, s, *rest)
                                        for (i, u, s, *rest) in rows["user_data"]])
                          if r[1] is not None or r[2] is not None]
@@ -85,8 +108,8 @@ def main() -> int:
 
     pages = []
     missing = 0
-    for pid, app, space, meta, created, updated in src.execute(
-            "SELECT id, app, space, html, created, updated FROM pages"):
+    for pid, space, meta, created, updated in src.execute(
+            "SELECT id, space, html, created, updated FROM pages WHERE app = ?", (app,)):
         info = json.loads(meta)
         path = os.path.join(a.depot, "uploads", info.get("id", ""))
         if not info.get("id") or not os.path.isfile(path):
@@ -94,12 +117,13 @@ def main() -> int:
             continue
         with open(path, "rb") as f:
             body = f.read()
-        pages.append((pid, app, space, info.get("original_filename") or info.get("filename") or "",
+        pages.append((pid, space, info.get("original_filename") or info.get("filename") or "",
                       info.get("content_type") or "text/html", body, created, updated))
 
     print(f"users: {len(users)}")
-    for table, _ in COPY_TABLES:
+    for table, _, _ in COPY_TABLES:
         print(f"{table}: {len(rows[table])}")
+    print(f"page owner: {'yes' if owner else 'none'}")
     print(f"pages: {len(pages)}" + (f" ({missing} skipped: file missing from uploads/)" if missing else ""))
     if a.dry_run:
         print("dry run: nothing written")
@@ -108,15 +132,17 @@ def main() -> int:
     with dst:
         dst.executemany("""INSERT INTO _user (id, email, unverified_email, password_hash, admin, created, updated)
                            VALUES (?, ?, ?, ?, ?, ?, ?)""", users)
-        for table, cols in COPY_TABLES:
+        for table, cols, _ in COPY_TABLES:
             marks = ", ".join("?" * len(cols.split(",")))
             dst.executemany(f"INSERT INTO {table} ({cols}) VALUES ({marks})", rows[table])
         if seq:
             dst.execute("UPDATE sqlite_sequence SET seq = max(seq, ?) WHERE name = 'user_data'", seq)
             dst.execute("INSERT INTO sqlite_sequence (name, seq) SELECT 'user_data', ? "
                         "WHERE NOT EXISTS (SELECT 1 FROM sqlite_sequence WHERE name = 'user_data')", seq)
-        dst.executemany("""INSERT INTO pages (id, app, space, filename, content_type, html, created, updated)
-                           VALUES (?, ?, ?, ?, ?, ?, ?, ?)""", pages)
+        dst.executemany("""INSERT INTO pages (id, space, filename, content_type, html, created, updated)
+                           VALUES (?, ?, ?, ?, ?, ?, ?)""", pages)
+        if owner:
+            dst.execute("INSERT INTO page_owner (id, owner) VALUES (1, ?)", (owner,))
     print(f"imported into {dst_path}")
     return 0
 

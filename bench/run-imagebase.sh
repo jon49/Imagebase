@@ -18,26 +18,28 @@ sleep 1   # let startup settle before the idle-RSS reading
 
 PW='BenchPassword!123'
 TOKENS=()
-for i in 1 2 3 4; do
+for i in $(seq 1 12); do
     curl -s -o /dev/null -X POST "$URL/api/auth/v1/register" -H 'Content-Type: application/json' \
         -d "{\"email\":\"bench$i@example.com\",\"password\":\"$PW\",\"password_repeat\":\"$PW\"}"
     "${IB[@]}" user verify "bench$i@example.com" >/dev/null
 done
-"${IB[@]}" owner set bench bench1@example.com >/dev/null
-for i in 1 2 3 4; do
+"${IB[@]}" owner set bench1@example.com >/dev/null
+for i in $(seq 1 12); do
     TOKENS+=("$(curl -sf -X POST "$URL/api/auth/v1/login" -H 'Content-Type: application/json' \
         -d "{\"email\":\"bench$i@example.com\",\"password\":\"$PW\"}" \
         | python3 -c 'import json,sys;print(json.load(sys.stdin)["auth_token"])')")
 done
-TOKEN_CSV=$(IFS=,; echo "${TOKENS[*]}")
+# Users 1-4 hold the read data set, 5-8 write, 9-12 have no data.
+csv() { local IFS=,; echo "$*"; }
+READ=$(csv "${TOKENS[@]:0:4}"); WRITE=$(csv "${TOKENS[@]:4:4}"); EMPTY=$(csv "${TOKENS[@]:8:4}")
 
-bench/seed.py "$URL" "$TOKEN_CSV"
+bench/seed.py "$URL" "$READ"
 
 PAGE_ID=0b0b0b0b-0000-4000-8000-000000000001
 curl -sf -o /dev/null -X POST "$URL/api/records/v1/pages" -H "Authorization: Bearer ${TOKENS[0]}" \
     -H 'Content-Type: application/json' \
     -d "{\"id\":\"$PAGE_ID\",\"app\":\"bench\",\"html\":{\"filename\":\"index.html\",\"content_type\":\"text/html\",\"data\":\"$(python3 -c 'import base64;print(base64.b64encode(b"<!doctype html><h1>bench</h1>"+b"x"*4000).decode())')\"}}"
 
-python3 bench/bench.py --url "$URL" --pid "$PID" --tokens "$TOKEN_CSV" \
-    --login "bench1@example.com:$PW" --page-app bench --page-id "$PAGE_ID" \
+python3 bench/bench.py --url "$URL" --pid "$PID" --read-tokens "$READ" --write-tokens "$WRITE" --empty-tokens "$EMPTY" \
+    --login "bench1@example.com:$PW" --page-id "$PAGE_ID" \
     --label "imagebase (goose $(goose --version | awk '{print $2}'))" "$@"

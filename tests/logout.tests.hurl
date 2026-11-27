@@ -16,7 +16,7 @@ auth_token: jsonpath "$.auth_token"
 refresh_token: jsonpath "$.refresh_token"
 
 # Sanity check: the access token works against the protected endpoint.
-POST {{url}}/api/data/test
+POST {{url}}/api/data
 Authorization: Bearer {{auth_token}}
 { "lastSyncedId": 0 }
 HTTP 200

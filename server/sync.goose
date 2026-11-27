@@ -1,7 +1,7 @@
-// POST /api/data/{app}: the last-write-wins sync protocol.
+// POST /api/data: the last-write-wins sync protocol.
 //
 // `user_data` is append-only. Each upload inserts rows; "latest value per key"
-// is derived at read time with ROW_NUMBER() over (scope, app, key) by id
+// is derived at read time with ROW_NUMBER() over (scope, key) by id
 // descending. A scope is the caller's personal rows (space IS NULL) or one
 // shared space. Keys and values are stored as the compact JSON text of what
 // the client sent, written byte-for-byte as serde_json would, and echoed back
@@ -71,7 +71,7 @@ fn is_int(n: json::Node&) -> bool {
     match n.val { Int => true, _ => false }
 }
 
-fn sync_data(c: Ctx&, app: const u8[:]) {
+fn sync_data(c: Ctx&) {
     let user = caller_id(c);
     var doc: json::Node[>..] = [];
     var decoded: u8[>..] = [];
@@ -95,16 +95,15 @@ fn sync_data(c: Ctx&, app: const u8[:]) {
         match items_node.val { Arr => {}, Null => {}, _ => fail(400, "bad json: data must be an array") }
     }
 
-    // Spaces the caller belongs to for this app, in a stable order.
+    // Spaces the caller belongs to, in a stable order.
     var members: u8[16][>..] = [];
     {
         let st = query("""
             SELECT m.space FROM space_members m JOIN spaces s ON s.id = m.space
-              WHERE m.user = ?1 AND s.app = ?2 ORDER BY s.created, m.space
+              WHERE m.user = ?1 ORDER BY s.created, m.space
             """);
         defer finish(st);
         bind_blob(st, 1, user);
-        bind_text(st, 2, app);
         while row(st) { members.push(col_id(st, 0)); }
     }
 
@@ -209,25 +208,24 @@ fn sync_data(c: Ctx&, app: const u8[:]) {
             query("""
                 WITH duplicates AS (
                   SELECT id, key, value, timestamp,
-                  ROW_NUMBER() OVER (PARTITION BY user, app, key ORDER BY id DESC) AS dup
+                  ROW_NUMBER() OVER (PARTITION BY user, key ORDER BY id DESC) AS dup
                   FROM user_data
-                  WHERE id > ?1 AND user = ?2 AND app = ?3 AND space IS NULL)
+                  WHERE id > ?1 AND user = ?2 AND space IS NULL)
                   SELECT key, value, id, timestamp FROM duplicates WHERE dup = 1 ORDER BY id
                 """)
         } else {
             query("""
                 WITH duplicates AS (
                   SELECT id, key, value, timestamp,
-                  ROW_NUMBER() OVER (PARTITION BY space, app, key ORDER BY id DESC) AS dup
+                  ROW_NUMBER() OVER (PARTITION BY space, key ORDER BY id DESC) AS dup
                   FROM user_data
-                  WHERE id > ?1 AND space = ?2 AND app = ?3)
+                  WHERE id > ?1 AND space = ?2)
                   SELECT key, value, id, timestamp FROM duplicates WHERE dup = 1 ORDER BY id
                 """)
         };
         defer finish(st);
         bind_int(st, 1, cursor);
         if s < 0 { bind_blob(st, 2, user); } else { bind_blob(st, 2, cursors[s].id); }
-        bind_text(st, 3, app);
         var max_latest: i64 = 0;
         while row(st) {
             kbuf.clear();
@@ -261,14 +259,13 @@ fn sync_data(c: Ctx&, app: const u8[:]) {
 
     c.out.append("],\"saved\":[");
     for item, n in items {
-        let st = query("INSERT INTO user_data (user, space, app, key, value) VALUES (?1, ?2, ?3, ?4, ?5) RETURNING id");
+        let st = query("INSERT INTO user_data (user, space, key, value) VALUES (?1, ?2, ?3, ?4) RETURNING id");
         defer finish(st);
         bind_blob(st, 1, user);
         if item.scope < 0 { bind_null(st, 2); } else { bind_blob(st, 2, cursors[item.scope].id); }
-        bind_text(st, 3, app);
         let key = text[item.key_at..item.key_at + item.key_len];
-        bind_text(st, 4, key);
-        if item.val_len < 0 { bind_null(st, 5); } else { bind_text(st, 5, text[item.val_at..item.val_at + item.val_len]); }
+        bind_text(st, 3, key);
+        if item.val_len < 0 { bind_null(st, 4); } else { bind_text(st, 4, text[item.val_at..item.val_at + item.val_len]); }
         var id: i64 = 0;
         if row(st) { id = col_int(st, 0); }
         if item.scope < 0 {

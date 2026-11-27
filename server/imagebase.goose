@@ -6,8 +6,7 @@
 //     imagebase [options] prune            run the nightly prune now
 //     imagebase [options] user list
 //     imagebase [options] user verify|delete|admin|unadmin <email>
-//     imagebase [options] owner set <app> <email>
-//     imagebase [options] owner list
+//     imagebase [options] owner [set <email> | clear]
 //
 // See `imagebase --help` for the options.
 import std;
@@ -26,8 +25,30 @@ import .maintenance;
 
 // --- routing -------------------------------------------------------------------
 
+// The paths of the multi-app server carried the app id as their third
+// segment (/api/data/{app}, /api/pages/{app}/{id}, ...). Installed clients
+// and already-shared page links still use them, so they are accepted: the
+// segment is dropped and the path routed as the current one.
+fn legacy_app_segment(seg: const u8[:][:]) -> bool {
+    let n = seg.len;
+    guard n >= 3 && seg[0] == "api" else { return false; }
+    let area = seg[1];
+    if area == "data" { return n == 3; }
+    if area == "pages" { return n == 4; }
+    if area == "spaces" {
+        return n == 3 || n == 6 || (n == 5 && (seg[4] == "members" || seg[4] == "invites"));
+    }
+    if area == "invites" { return n == 5 || (n == 4 && seg[3] != "accept"); }
+    return false;
+}
+
 fn route(c: Ctx&) {
-    let seg = segments(c.path);
+    let all = segments(c.path);
+    var seg: const u8[:][>..] = [];
+    let legacy = legacy_app_segment(all);
+    for s, i in all {
+        if !(legacy && i == 2) { seg.push(s); }
+    }
     let n = seg.len;
     let m = c.method;
     guard n >= 2 && seg[0] == "api" || n >= 1 && seg[0] == "_" else { fail(404, "Not found"); }
@@ -61,9 +82,12 @@ fn route(c: Ctx&) {
         fail(404, "Not found");
     }
 
-    if seg[1] == "data" && n == 3 { want(c, "POST"); sync_data(c, app_id(seg[2])); return; }
+    // TrailBase's liveness probe, kept for monitors and scripts that use it.
+    if seg[1] == "healthcheck" && n == 2 { want(c, "GET"); text(c, "Ok"); return; }
 
-    if seg[1] == "pages" && n == 4 { want(c, "GET"); serve_page(c, app_id(seg[2]), seg[3]); return; }
+    if seg[1] == "data" && n == 2 { want(c, "POST"); sync_data(c); return; }
+
+    if seg[1] == "pages" && n == 3 { want(c, "GET"); serve_page(c, seg[2]); return; }
 
     if seg[1] == "records" && n >= 4 && seg[2] == "v1" && seg[3] == "pages" {
         if n == 4 { want(c, "POST"); create_page(c); return; }
@@ -74,18 +98,16 @@ fn route(c: Ctx&) {
         }
     }
 
-    if seg[1] == "spaces" && n >= 3 {
-        let app = app_id(seg[2]);
-        if n == 3 { want(c, "POST"); create_space(c, app); return; }
-        if n == 5 && seg[4] == "members" { want(c, "GET"); list_members(c, app, seg[3]); return; }
-        if n == 6 && seg[4] == "members" { want(c, "DELETE"); remove_member(c, app, seg[3], seg[5]); return; }
-        if n == 5 && seg[4] == "invites" { want(c, "POST"); create_invite(c, app, seg[3]); return; }
+    if seg[1] == "spaces" {
+        if n == 2 { want(c, "POST"); create_space(c); return; }
+        if n == 4 && seg[3] == "members" { want(c, "GET"); list_members(c, seg[2]); return; }
+        if n == 5 && seg[3] == "members" { want(c, "DELETE"); remove_member(c, seg[2], seg[4]); return; }
+        if n == 4 && seg[3] == "invites" { want(c, "POST"); create_invite(c, seg[2]); return; }
     }
 
-    if seg[1] == "invites" && n >= 4 {
-        let app = app_id(seg[2]);
-        if n == 4 { want(c, "GET"); get_invite(c, app, seg[3]); return; }
-        if n == 5 && seg[4] == "accept" { want(c, "POST"); accept_invite(c, app, seg[3]); return; }
+    if seg[1] == "invites" {
+        if n == 3 { want(c, "GET"); get_invite(c, seg[2]); return; }
+        if n == 4 && seg[3] == "accept" { want(c, "POST"); accept_invite(c, seg[2]); return; }
     }
 
     fail(404, "Not found");
@@ -94,12 +116,6 @@ fn route(c: Ctx&) {
 // HEAD is answered as GET; the front end sends the headers only.
 fn want(c: Ctx&, method: const u8[:]) {
     if c.method != method && !(method == "GET" && c.method == "HEAD") { fail(405, "Method not allowed"); }
-}
-
-// The {app} path segment namespaces every read and write.
-fn app_id(s: const u8[:]) -> const u8[:] {
-    if s.len == 0 { fail(400, "app id is required"); }
-    return s;
 }
 
 // CORS: with --cors '*' (the default, matching TrailBase) any Origin is echoed back.
@@ -225,8 +241,9 @@ fn usage() {
           user verify <email>        mark an account's email as verified
           user delete <email>        delete an account (as the API's self-delete does)
           user admin|unadmin <email> set or clear the admin flag
-          owner set <app> <email>    make <email> the page owner of <app>
-          owner list                 list page owners
+          owner                      show the page owner (who may publish outside a space)
+          owner set <email>          make <email> the page owner
+          owner clear                remove the page owner
 
         options:
           --data DIR          data directory (default ./data): imagebase.db, secrets/
@@ -242,6 +259,14 @@ fn usage() {
           --refresh-ttl SECS  refresh token lifetime (default 2592000)
           --access-log        log every request to stderr
         """);
+}
+
+// make_dir for a path and each missing parent, like `mkdir -p`.
+fn make_dirs(path: const u8[:]) -> bool {
+    for ch, i in path {
+        if ch == '/' && i > 0 { make_dir(path[..i]); }
+    }
+    return make_dir(path);
 }
 
 fn int_arg(v: const u8[:]) -> i64 {
@@ -340,27 +365,25 @@ fn list_users() {
     }
 }
 
-fn owner_set(app: const u8[:], email: const u8[:]) {
+fn owner_set(email: const u8[:]) {
     let id = find_user(email);
-    let st = query("INSERT INTO app_owners (app, owner) VALUES (?1, ?2) ON CONFLICT (app) DO UPDATE SET owner = excluded.owner");
+    let st = query("INSERT INTO page_owner (id, owner) VALUES (1, ?1) ON CONFLICT (id) DO UPDATE SET owner = excluded.owner");
     defer finish(st);
-    bind_text(st, 1, app);
-    bind_blob(st, 2, id);
+    bind_blob(st, 1, id);
     run(st);
-    print("owner of ", app, ": ", email);
+    print("page owner: ", email);
 }
 
-fn list_owners() {
-    let st = query("SELECT o.app, u.email FROM app_owners o JOIN _user u ON u.id = o.owner ORDER BY o.app");
+fn owner_clear() {
+    exec("DELETE FROM page_owner");
+    print("page owner cleared");
+}
+
+fn show_owner() {
+    let st = query("SELECT coalesce(u.email, u.unverified_email) FROM page_owner o JOIN _user u ON u.id = o.owner");
     defer finish(st);
     var line: u8[>..] = [];
-    while row(st) {
-        line.clear();
-        col_append(st, 0, line);
-        line.append(": ");
-        col_append(st, 1, line);
-        print(line);
-    }
+    if row(st) { col_append(st, 0, line); print(line); } else { print("(no page owner)"); }
 }
 
 fn main() {
@@ -404,7 +427,7 @@ fn main() {
     while CFG.site_url.len > 0 && CFG.site_url[CFG.site_url.len - 1] == '/' { CFG.site_url.pop(); }
     if CFG.mail_from.len == 0 { set(CFG.mail_from, str(CFG.app_name, " <noreply@localhost>")); }
 
-    if !make_dir(CFG.data_dir) { abort(str("cannot create ", CFG.data_dir)); }
+    if !make_dirs(CFG.data_dir) { abort(str("cannot create ", CFG.data_dir)); }
     DB = ib_db_open(db_path(), -1);
     if DB == 0 { exit(1); }
     var code = 0;
@@ -425,10 +448,12 @@ fn main() {
             list_users();
         } else if cmd == "user" && rest.len == 3 {
             user_cmd(rest[1], rest[2]);
-        } else if cmd == "owner" && rest.len == 4 && rest[1] == "set" {
-            owner_set(rest[2], rest[3]);
-        } else if cmd == "owner" && rest.len == 2 && rest[1] == "list" {
-            list_owners();
+        } else if cmd == "owner" && rest.len == 1 {
+            show_owner();
+        } else if cmd == "owner" && rest.len == 3 && rest[1] == "set" {
+            owner_set(rest[2]);
+        } else if cmd == "owner" && rest.len == 2 && rest[1] == "clear" {
+            owner_clear();
         } else {
             usage();
             code = 2;

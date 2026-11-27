@@ -1,19 +1,27 @@
 # Migrating a deployment from TrailBase
 
 This guide moves a running ImageBase deployment from the TrailBase + WASM
-server (up to commit `e444c51`) to the Goose server. The HTTP API is the same,
-so frontends need no changes. Users keep their passwords, sync data, spaces and
-published pages. They have to log in once more after the switch.
+server (up to commit `e444c51`) to the Goose server. Frontends need no changes:
+the paths with an app id they call are still served. Users keep their
+passwords, sync data, spaces and published pages. They have to log in once
+more after the switch.
+
+A TrailBase depot could serve several frontends, each under its own app id.
+A Goose server serves one, so each app gets its own data dir and server
+process (each idles at about 7 MB). Give the importer `--app NAME` to pick
+which app goes into which data dir; it's needed only when the depot has more
+than one. Accounts were shared by every app in a depot, so each import copies
+all of them.
 
 ## What carries over
 
 | TrailBase depot | Goose server | Notes |
 |---|---|---|
 | `_user` | `_user` | id, email, unverified email, admin flag, timestamps, Argon2id hash (verifies unchanged) |
-| `user_data` | `user_data` | same ids and AUTOINCREMENT high-water mark, so `lastSyncedId` and space cursors stay valid |
-| `spaces`, `space_members`, `space_invites` | same tables | open invite codes keep working until they expire |
-| `app_owners` | `app_owners` | |
-| `pages` + `uploads/<object id>` | `pages` | the file bytes move into the row |
+| the app's `user_data` | `user_data` | same ids and AUTOINCREMENT high-water mark, so `lastSyncedId` and space cursors stay valid |
+| the app's `spaces`, `space_members`, `space_invites` | same tables | open invite codes keep working until they expire |
+| the app's `app_owners` row | `page_owner` | the one account that may publish pages outside a space |
+| the app's `pages` + `uploads/<object id>` | `pages` | the file bytes move into the row; old `/api/pages/<app>/<id>` links still work |
 | `_session` (session.db) | — | users log in again: TrailBase's tokens were signed with its own key |
 | pending verification / reset codes | — | ask anyone mid-reset to request a new link |
 | `admin@localhost` | — | TrailBase's auto-created admin; skipped unless `--keep-admin-localhost` |
@@ -51,15 +59,16 @@ TLS is not built in. If `trail` was serving HTTPS directly, put a reverse proxy
    cp -r /srv/traildepot /tmp/depot-copy
    server/imagebase --data /tmp/rehearsal migrate
    python3 tools/import-from-trailbase.py --depot /tmp/depot-copy --data /tmp/rehearsal --dry-run
-   python3 tools/import-from-trailbase.py --depot /tmp/depot-copy --data /tmp/rehearsal
+   python3 tools/import-from-trailbase.py --depot /tmp/depot-copy --data /tmp/rehearsal  # --app soccer
    server/imagebase --data /tmp/rehearsal --address localhost:4100 &
    curl -s -X POST localhost:4100/api/auth/v1/login -H 'Content-Type: application/json' \
        -d '{"email":"<a real account>","password":"<its password>"}'
    server/imagebase --data /tmp/rehearsal user list
-   server/imagebase --data /tmp/rehearsal owner list
+   server/imagebase --data /tmp/rehearsal owner
    ```
 
-   The dry run prints the row counts it will copy. If any page file is
+   The dry run prints the app and the row counts it will copy. If the depot
+   holds several apps and `--app` is missing, it lists them and stops. If any page file is
    missing from `uploads/`, it says so, and that page is skipped.
 
 3. **Cut over.** Stop `trail` so nothing writes during the copy. Then import
@@ -85,7 +94,7 @@ TLS is not built in. If `trail` was serving HTTPS directly, put a reverse proxy
    03:30 UTC, so no cron job is needed.
 
 5. **Check**: log in, sync, fetch a published page
-   (`GET /api/pages/<app>/<id>`), and request a password reset to confirm mail
+   (`GET /api/pages/<id>`, and an old `/api/pages/<app>/<id>` link), and request a password reset to confirm mail
    gets delivered.
 
 ## Rolling back
@@ -102,7 +111,7 @@ stays in `imagebase.db` and won't be in the depot.
 | delete a user | `imagebase --data DIR user delete <email>` |
 | toggle admin | `imagebase --data DIR user admin\|unadmin <email>` |
 | list users | `imagebase --data DIR user list` |
-| set an app's page owner (SQL on `app_owners`) | `imagebase --data DIR owner set <app> <email>` |
+| set an app's page owner (SQL on `app_owners`) | `imagebase --data DIR owner set <email>` (`owner` shows it) |
 | run the prune job now | `imagebase --data DIR prune` |
 | browse tables | `sqlite3 DIR/imagebase.db` (no TrailBase-only SQL functions are needed) |
 

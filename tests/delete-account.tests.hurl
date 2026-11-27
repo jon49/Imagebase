@@ -11,14 +11,14 @@ auth_token: jsonpath "$.auth_token"
 refresh_token: jsonpath "$.refresh_token"
 
 # Give the user something to clean up: a personal row and a space of their own.
-POST {{url}}/api/data/delete-test
+POST {{url}}/api/data
 Authorization: Bearer {{auth_token}}
 { "lastSyncedId": 0, "data": [ { "key": "doomed", "data": { "v": 1 } } ] }
 HTTP 200
 [Asserts]
 jsonpath "$.saved" count == 1
 
-POST {{url}}/api/spaces/delete-test
+POST {{url}}/api/spaces
 Authorization: Bearer {{auth_token}}
 HTTP 200
 
@@ -34,17 +34,17 @@ HTTP 200
 # The JWT itself stays valid until it expires, but the routes must now
 # reject it outright: reads as well as writes, and with 401 rather than a 500
 # from the `_user` foreign keys.
-POST {{url}}/api/data/delete-test
+POST {{url}}/api/data
 Authorization: Bearer {{auth_token}}
 { "lastSyncedId": 0 }
 HTTP 401
 
-POST {{url}}/api/data/delete-test
+POST {{url}}/api/data
 Authorization: Bearer {{auth_token}}
 { "lastSyncedId": 0, "data": [ { "key": "zombie", "data": { "v": 2 } } ] }
 HTTP 401
 
-POST {{url}}/api/spaces/delete-test
+POST {{url}}/api/spaces
 Authorization: Bearer {{auth_token}}
 HTTP 401
 

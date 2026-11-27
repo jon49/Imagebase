@@ -1,5 +1,6 @@
 // Schema migrations and the nightly prune.
 import std;
+import exception;
 import .util;
 import .db;
 
@@ -8,7 +9,32 @@ struct Migration { name: const u8[:], sql: const u8[:] }
 // Applied in order, each once. Append new files; never edit a shipped one.
 let MIGRATIONS = [
     Migration { name: "0001_schema", sql: embed_file("migrations/0001_schema.sql") },
+    Migration { name: "0002_single_app", sql: embed_file("migrations/0002_single_app.sql") },
 ];
+
+// Checks a database can take a migration; throws a Fail explaining why not.
+fn precheck(name: const u8[:]) {
+    if name != "0002_single_app" { return; }
+    var apps: u8[>..] = [];
+    var n = 0;
+    {
+        let st = query("""
+            SELECT app FROM user_data UNION SELECT app FROM spaces
+              UNION SELECT app FROM pages UNION SELECT app FROM app_owners ORDER BY 1
+            """);
+        defer finish(st);
+        while row(st) {
+            if n > 0 { apps.append(", "); }
+            col_append(st, 0, apps);
+            n++;
+        }
+    }
+    if n > 1 {
+        exception::throw(Fail { status: 1, msg: str(
+            "this database holds data for several apps (", apps, "); a server now serves one. ",
+            "Import each into its own data dir: tools/import-from-trailbase.py --app NAME") });
+    }
+}
 
 fn migrate() {
     exec("CREATE TABLE IF NOT EXISTS _migrations (name TEXT PRIMARY KEY NOT NULL, applied INTEGER NOT NULL DEFAULT (UNIXEPOCH())) STRICT");
@@ -21,6 +47,7 @@ fn migrate() {
             done = row(st);
         }
         if done { continue; }
+        precheck(m.name);
         begin_write();
         exec(m.sql);
         let st = query("INSERT INTO _migrations (name) VALUES (?1)");
@@ -44,7 +71,7 @@ fn prune() -> i64 {
           SELECT id FROM (
           SELECT id, timestamp,
           ROW_NUMBER() OVER (
-          PARTITION BY space, iif(space IS NULL, user, NULL), app, key
+          PARTITION BY space, iif(space IS NULL, user, NULL), key
           ORDER BY id DESC) AS dup
           FROM user_data)
           WHERE dup > 1 AND timestamp < strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-1 month'))

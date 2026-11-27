@@ -119,13 +119,7 @@ echo "--- sync tests ---"
 run_hurl --variable "token=$token" add-data.tests.hurl
 run_hurl --variable "token=$token" validation.tests.hurl
 
-echo "--- publish page: register test user as owner of app=pages-test ---"
-ib owner set pages-test "$email" >/dev/null
-
-echo "--- publish page: create / fetch inline / overwrite / authz ---"
-run_hurl --variable "token=$token" publish-page.tests.hurl
-
-echo "--- spaces: register + verify + log in a second user ---"
+echo "--- register + verify + log in a second user (not the page owner) ---"
 email_b=$(grep '^email_b=' "$ENV_FILE" | cut -d= -f2-)
 password=$(grep '^password=' "$ENV_FILE" | cut -d= -f2-)
 curl -s -o /dev/null -X POST "$TEST_URL/api/auth/v1/register" \
@@ -137,26 +131,35 @@ token_b=$(curl -sf -X POST "$TEST_URL/api/auth/v1/login" \
     -d "{\"email\":\"$email_b\",\"password\":\"$password\"}" \
     | python3 -c 'import json,sys;print(json.load(sys.stdin)["auth_token"])')
 
+echo "--- publish page: make the test user the page owner ---"
+ib owner set "$email" >/dev/null
+
+echo "--- publish page: create / fetch inline / overwrite / authz ---"
+run_hurl --variable "token=$token" --variable "token_b=$token_b" publish-page.tests.hurl
+
+# Spaces tests count A's personal rows from scratch.
+sqlite3 "$DB" "DELETE FROM user_data WHERE user = (SELECT id FROM _user WHERE email = '$email');"
+
 echo "--- spaces: seed spaces + memberships ---"
 sqlite3 "$DB" "
-    INSERT INTO spaces (id, app) VALUES
-      (X'55555555555555555555555555555555', 'spaces-test'),
-      (X'66666666666666666666666666666666', 'spaces-test'),
-      (X'77777777777777777777777777777777', 'other-app');
+    INSERT INTO spaces (id) VALUES
+      (X'55555555555555555555555555555555'),
+      (X'66666666666666666666666666666666');
     INSERT INTO space_members (space, user)
       SELECT X'55555555555555555555555555555555', id FROM _user WHERE email IN ('$email', '$email_b')
-      UNION ALL SELECT X'66666666666666666666666666666666', id FROM _user WHERE email = '$email'
-      UNION ALL SELECT X'77777777777777777777777777777777', id FROM _user WHERE email IN ('$email', '$email_b');"
+      UNION ALL SELECT X'66666666666666666666666666666666', id FROM _user WHERE email = '$email';"
 
 echo "--- spaces: shared sync + space-member page publishing ---"
 run_hurl --variable "token=$token" --variable "token_b=$token_b" spaces.tests.hurl
 
 echo "--- spaces: create / invite / accept / remove / leave ---"
+spaces_before=$(sqlite3 "$DB" "SELECT COUNT(*) FROM spaces;")
 run_hurl --variable "token=$token" --variable "token_b=$token_b" invites.tests.hurl
 
-left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM spaces WHERE app = 'invite-test';")
-if [ "$left" != "0" ]; then
-    echo "FAIL: memberless invite-test space was not garbage-collected (spaces=$left)"
+# The space invites.tests.hurl made lost its last member, so it must be gone.
+spaces_after=$(sqlite3 "$DB" "SELECT COUNT(*) FROM spaces;")
+if [ "$spaces_after" != "$spaces_before" ]; then
+    echo "FAIL: memberless space was not garbage-collected (spaces $spaces_before -> $spaces_after)"
     exit 1
 fi
 
@@ -199,7 +202,7 @@ if [ "$b_space_rows" = "0" ] || [ "$orphaned" != "$b_space_rows" ] || [ "$person
 fi
 echo "user-delete assertions passed (kept $orphaned shared row(s), dropped personal rows + membership)"
 
-echo "--- prune job: seed overwrite history under app=prune ---"
+echo "--- prune job: seed overwrite history (keys \"old\" and \"recent\") ---"
 run_hurl --variable "token=$token" prune-seed.tests.hurl
 
 # Age the older "old" row (every non-latest row for that key) past the one-month
@@ -209,28 +212,31 @@ echo "--- prune job: age the overwritten 'old' row past retention ---"
 sqlite3 "$DB" "
     UPDATE user_data
        SET timestamp = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 months')
-     WHERE app = 'prune' AND key = '\"old\"'
-       AND id < (SELECT MAX(id) FROM user_data WHERE app = 'prune' AND key = '\"old\"');"
+     WHERE key = '\"old\"'
+       AND id < (SELECT MAX(id) FROM user_data WHERE key = '\"old\"');"
 
-before=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE app = 'prune';")
-echo "rows under app=prune before prune: $before (expect 4)"
+before=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE key IN ('\"old\"', '\"recent\"');")
+echo "prune rows before prune: $before (expect 4)"
 
 echo "--- prune job: run it on demand ---"
 ib prune
 
-after=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE app = 'prune';")
-old_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE app = 'prune' AND key = '\"old\"';")
-recent_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE app = 'prune' AND key = '\"recent\"';")
-echo "rows under app=prune after prune: $after (expect 3)"
+after=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE key IN ('\"old\"', '\"recent\"');")
+old_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE key = '\"old\"';")
+recent_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE key = '\"recent\"';")
+echo "prune rows after prune: $after (expect 3)"
 
 # The aged "old" overwrite must be gone (key keeps only its latest), while both
 # "recent" rows survive because they're inside the retention window.
 if [ "$after" != "3" ] || [ "$old_left" != "1" ] || [ "$recent_left" != "2" ]; then
-    echo "FAIL: prune left app=prune in an unexpected state" \
+    echo "FAIL: prune left the old/recent rows in an unexpected state" \
          "(total=$after old=$old_left recent=$recent_left; expected 3/1/2)"
     exit 1
 fi
 echo "prune assertions passed (deleted the aged overwrite, kept latest + recent)"
+
+echo "--- old app-scoped paths still route ---"
+run_hurl --variable "token=$token" legacy-paths.tests.hurl
 
 echo "--- logout flow ---"
 run_hurl logout.tests.hurl
@@ -245,11 +251,12 @@ verify "$email_c"
 c_id=$(sqlite3 "$DB" "SELECT hex(id) FROM _user WHERE email = '$email_c';")
 
 echo "--- delete account: self-service delete, stale token rejected ---"
+spaces_before_delete=$(sqlite3 "$DB" "SELECT COUNT(*) FROM spaces;")
 run_hurl delete-account.tests.hurl
 
 users_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM _user WHERE id = X'$c_id';")
-rows_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE app = 'delete-test';")
-spaces_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM spaces WHERE app = 'delete-test';")
+rows_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE key = '\"doomed\"';")
+spaces_left=$(( $(sqlite3 "$DB" "SELECT COUNT(*) FROM spaces;") - spaces_before_delete ))
 if [ "$users_left" != "0" ] || [ "$rows_left" != "0" ] || [ "$spaces_left" != "0" ]; then
     echo "FAIL: account delete left data behind" \
          "(users=$users_left rows=$rows_left spaces=$spaces_left; expected 0/0/0)"

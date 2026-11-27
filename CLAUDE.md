@@ -6,8 +6,11 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ImageBase's backend: one [Goose](https://github.com/aardappel/goose) program (`server/`)
 plus a little C (`server/native/`) for sockets, SQLite, crypto and sendmail. It replaced
-a TrailBase + Rust/WASM version (last at commit `e444c51`) and keeps its HTTP API
-byte-compatible, so the frontends don't change. The README documents the API.
+a TrailBase + Rust/WASM version (last at commit `e444c51`) and keeps its wire format.
+One server (process and data dir) serves one application: nothing is namespaced
+by app. The old `/api/<area>/{app}/...` paths are still routed, with that segment
+dropped (`legacy_app_segment` in imagebase.goose), for installed clients and shared
+page links. The README documents the API.
 
 ## Commands
 
@@ -28,7 +31,7 @@ On failure it prints the last server log lines. To run one Hurl file by hand, st
 `make dev` and use `hurl --test --variables-file tests/local.env --variable url=... --variable token=...`.
 
 Admin tasks are CLI subcommands: `server/imagebase --data DIR user verify|delete|admin <email>`,
-`owner set <app> <email>`, `prune`, `migrate`. They work while the server runs (SQLite WAL).
+`owner [set <email> | clear]`, `prune`, `migrate`. They work while the server runs (SQLite WAL).
 
 ## Prerequisites
 
@@ -64,10 +67,9 @@ plus `hurl`, `sqlite3` and `python3` for the tests.
 
 ### The sync protocol (sync.goose)
 
-- `{app}` namespaces every read and write. The user comes from the verified JWT,
-  never the body.
+- The user comes from the verified JWT, never the body.
 - `user_data` is append-only. "Latest per key" is `ROW_NUMBER() OVER (PARTITION BY
-  user|space, app, key ORDER BY id DESC)` = 1. Don't turn it into upserts.
+  user|space, key ORDER BY id DESC)` = 1. Don't turn it into upserts.
 - `key`/`data` are stored as compact JSON text that `canon()` writes exactly as
   serde_json did (Goose's `json::format_*` match serde's escaping and float
   layout), and are echoed as strings.
