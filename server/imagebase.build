@@ -1,0 +1,18 @@
+// Native part of the ImageBase server: the HTTP front end, the SQLite binding,
+// crypto (SHA-256/HMAC, vendored Argon2) and sendmail. See native/.
+c_sources = [
+    "native/http.c",
+    "native/db.c",
+    "native/crypto.c",
+    "native/argon2_fill.c",
+    "native/argon2_fill_avx2.c",
+    "native/argon2/argon2.c",
+    "native/argon2/core.c",
+    "native/argon2/encoding.c",
+    "native/argon2/blake2/blake2b.c",
+];
+c_include = ["native/argon2"];
+c_defines = ["ARGON2_NO_THREADS"];
+c_flags_cc = ["-O3"];
+c_libs = ["sqlite3", "pthread"];
+output = "imagebase";

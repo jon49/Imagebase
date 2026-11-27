@@ -1,4 +1,4 @@
-# Negative-path checks for /api/auth/v1/register. TrailBase rejects invalid
+# Negative-path checks for /api/auth/v1/register. The server rejects invalid
 # payloads with 400 *before* touching the database, so these calls do not
 # pollute the _user table even on repeated runs.
 
@@ -22,7 +22,7 @@ Content-Type: application/json
 }
 HTTP 400
 
-# Empty password — fails TrailBase's password policy.
+# Empty password — fails the password policy (8+ characters).
 POST {{url}}/api/auth/v1/register
 Content-Type: application/json
 {

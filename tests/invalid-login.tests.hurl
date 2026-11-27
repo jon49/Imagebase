@@ -1,8 +1,8 @@
-# Negative-path checks for /api/auth/v1/login. TrailBase intentionally returns
+# Negative-path checks for /api/auth/v1/login. The server intentionally returns
 # the same 401 for "wrong password", "unknown email", and "missing user" so
 # attackers cannot enumerate accounts via the login endpoint.
 #
-# After enough failed credential checks, TrailBase's anti-bruteforce limiter
+# After enough failed credential checks, the anti-bruteforce limiter
 # starts returning 429 instead of 401. We accept either so reruns stay green.
 # The empty-email case is rejected upstream as malformed input (400) and is
 # not subject to that limiter.

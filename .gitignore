@@ -1,6 +1,14 @@
 # Local admin credentials — never commit.
 .env
 
-# WASM guest build outputs.
-guests/rust/target/
-traildepot/wasm/imagebase_guest.wasm
+# The server binary (make build) and its runtime data dir (make dev / run).
+server/imagebase
+data/
+
+# A pre-rewrite TrailBase depot kept locally to import from
+# (tools/import-from-trailbase.py).
+traildepot/
+guests/
+
+# Benchmark scratch output other than the committed results.
+bench/*.log

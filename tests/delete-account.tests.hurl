@@ -1,4 +1,4 @@
-# Self-service account deletion via TrailBase's `DELETE /api/auth/v1/delete`.
+# Self-service account deletion via `DELETE /api/auth/v1/delete`.
 # Uses a dedicated, already registered + verified user (`{{email_c}}`) since it
 # doesn't survive the test. The runner checks the leftover DB state afterwards.
 
@@ -31,7 +31,7 @@ DELETE {{url}}/api/auth/v1/delete
 Authorization: Bearer {{auth_token}}
 HTTP 200
 
-# The JWT itself stays valid until it expires, but the guest routes must now
+# The JWT itself stays valid until it expires, but the routes must now
 # reject it outright: reads as well as writes, and with 401 rather than a 500
 # from the `_user` foreign keys.
 POST {{url}}/api/data/delete-test

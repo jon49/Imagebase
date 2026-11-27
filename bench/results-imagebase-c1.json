@@ -1,0 +1,84 @@
+{
+  "label": "imagebase (goose v2026.4)",
+  "idle_rss_mb": 10.578125,
+  "threads": 27,
+  "scenarios": [
+    {
+      "scenario": "page GET (public)",
+      "requests": 103726,
+      "rps": 10363.373954785546,
+      "p50_ms": 0.07483999979740474,
+      "p99_ms": 0.28218799889145885,
+      "statuses": {
+        "200": 103726
+      },
+      "server_cpu_s": 3.66,
+      "server_cores_used": 0.365674456496106,
+      "server_cpu_us_per_req": 35.28527080963307,
+      "peak_rss_mb": 10.578125,
+      "end_rss_mb": 10.578125
+    },
+    {
+      "scenario": "sync write 10 rows",
+      "requests": 18475,
+      "rps": 1846.9485976614972,
+      "p50_ms": 0.40726499901211355,
+      "p99_ms": 2.2815440006525023,
+      "statuses": {
+        "200": 18475
+      },
+      "server_cpu_s": 5.549999999999999,
+      "server_cores_used": 0.5548343554544686,
+      "server_cpu_us_per_req": 300.4059539918809,
+      "peak_rss_mb": 10.58203125,
+      "end_rss_mb": 10.58203125
+    },
+    {
+      "scenario": "sync read 200 rows",
+      "requests": 9035,
+      "rps": 903.2397075094065,
+      "p50_ms": 1.0624500009726034,
+      "p99_ms": 2.2184810004546307,
+      "statuses": {
+        "200": 9035
+      },
+      "server_cpu_s": 7.51,
+      "server_cores_used": 0.7507836417704087,
+      "server_cpu_us_per_req": 831.2119535141118,
+      "peak_rss_mb": 11.51171875,
+      "end_rss_mb": 11.51171875
+    },
+    {
+      "scenario": "sync empty (auth only)",
+      "requests": 69505,
+      "rps": 6945.799422345083,
+      "p50_ms": 0.11508999887155369,
+      "p99_ms": 0.41864599916152656,
+      "statuses": {
+        "200": 69505
+      },
+      "server_cpu_s": 4.699999999999999,
+      "server_cores_used": 0.46968214207642456,
+      "server_cpu_us_per_req": 67.62103445795266,
+      "peak_rss_mb": 11.51171875,
+      "end_rss_mb": 11.51171875
+    },
+    {
+      "scenario": "login (password hash)",
+      "requests": 545,
+      "rps": 54.470339582306856,
+      "p50_ms": 17.43035299841722,
+      "p99_ms": 33.73143699900538,
+      "statuses": {
+        "200": 545
+      },
+      "server_cpu_s": 9.720000000000002,
+      "server_cores_used": 0.9714710105321519,
+      "server_cpu_us_per_req": 17834.862385321107,
+      "peak_rss_mb": 30.54296875,
+      "end_rss_mb": 25.78515625
+    }
+  ],
+  "final_rss_mb": 11.54296875,
+  "peak_rss_mb": 30.328125
+}

@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Import users + data from a V/`veb` ImageBase SQLite database into the
-TrailBase main.db used by NewImageBase.
+ImageBase server's database (`<data dir>/imagebase.db`; create it first with
+`server/imagebase --data <dir> migrate`).
 
 What gets ported
 ----------------
-* Each row in the V `users` table becomes a row in TrailBase's `_user`,
+* Each row in the V `users` table becomes a row in `_user`,
   with a freshly-generated UUIDv4, a verified email, and an empty
   `password_hash`. Empty hashes can never authenticate, so users must use
   the password-reset flow on first login (see README).
@@ -15,15 +16,15 @@ What gets ported
 
 What does NOT get ported
 ------------------------
-* Password hashes — V used SHA-256+salt, TrailBase uses Argon2id. Force
+* Password hashes — V used SHA-256+salt, the server uses Argon2id. Force
   every user through the reset flow.
-* Sessions / `password_reset` tokens — short-lived; TrailBase manages its
+* Sessions / `password_reset` tokens — short-lived; the server manages its
   own.
 * Email-verification status of the V user — we mark all imported users
   verified so they can log in immediately after resetting their password.
 
 Skips users already present in `_user` (matched by email). Re-running is
-safe: the script never mutates existing TrailBase rows, but rows already
+safe: the script never mutates existing rows, but rows already
 imported under the same `app` will accumulate. Pass `--wipe-app` to clear
 the namespace before reimport.
 """
@@ -38,10 +39,10 @@ from contextlib import closing
 
 
 def stub_check_funcs(conn: sqlite3.Connection) -> None:
-    """The `_user` table has CHECK(is_uuid(id)) and CHECK(is_email(email)).
-    Both functions live in TrailBase's bundled SQLite extension, which
-    plain Python sqlite3 can't load. Register no-op stubs that always
-    accept — we control the inputs ourselves."""
+    """TrailBase's `_user` table had CHECK(is_uuid(id)) and CHECK(is_email(email)),
+    functions from its bundled SQLite extension. The current schema doesn't
+    use them; the no-op stubs are kept so the script also still runs against
+    an old TrailBase main.db."""
     conn.create_function("is_uuid", 1, lambda _x: 1)
     conn.create_function("is_email", 1, lambda _x: 1)
 
@@ -49,7 +50,7 @@ def stub_check_funcs(conn: sqlite3.Connection) -> None:
 def as_text(v):
     """V stored some `data.value` rows with BLOB storage class even though
     the column was declared TEXT (sqlite's loose affinity let this slip).
-    TrailBase's `user_data.value` is STRICT TEXT and rejects BLOB binds,
+    `user_data.value` is STRICT TEXT and rejects BLOB binds,
     so coerce bytes → str. The original payloads are JSON text per the V
     server's @[raw] handling, so UTF-8 decode is lossless."""
     return v.decode("utf-8") if isinstance(v, bytes) else v
@@ -59,8 +60,8 @@ def main() -> int:
     p = argparse.ArgumentParser(description=__doc__.split("\n", 1)[0])
     p.add_argument("--old-db", required=True,
                    help="path to the V ImageBase sqlite db (with users + data tables)")
-    p.add_argument("--new-db", default="traildepot/data/main.db",
-                   help="path to TrailBase main.db (default: traildepot/data/main.db)")
+    p.add_argument("--new-db", default="data/imagebase.db",
+                   help="path to the server's database (default: data/imagebase.db)")
     p.add_argument("--app", required=True,
                    help="app id to namespace the imported rows under (e.g. 'imagebase')")
     p.add_argument("--wipe-app", action="store_true",

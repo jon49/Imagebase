@@ -1,4 +1,4 @@
-# Register the canonical test user. TrailBase returns 200 whether the user is
+# Register the canonical test user. The server returns 200 whether the user is
 # newly created or already exists — this privacy-preserving behaviour prevents
 # attackers from enumerating registered emails. The runner relies on that
 # property to make the step idempotent across repeated test runs.

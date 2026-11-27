@@ -4,130 +4,98 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## What this is
 
-ImageBase is a rewrite of an older V/`veb` app onto [TrailBase](https://trailbase.io).
-TrailBase owns everything auth-shaped (users, sessions, JWTs, password reset). The only
-custom code is one HTTP route — a CRDT (last-write-wins) sync endpoint — compiled as a
-Rust → `wasm32-wasip2` component and loaded by the `trail` server at startup.
+ImageBase's backend: one [Goose](https://github.com/aardappel/goose) program (`server/`)
+plus a little C (`server/native/`) for sockets, SQLite, crypto and sendmail. It replaced
+a TrailBase + Rust/WASM version (last at commit `e444c51`) and keeps its HTTP API
+byte-compatible, so the frontends don't change. The README documents the API.
 
 ## Commands
 
 ```sh
-make build      # build the wasm guest and copy it into traildepot/wasm/ (alias: make deploy)
-make dev        # build + run trail with --dev (permissive CORS, emails logged to stderr)
-make run        # build + run trail (production-ish)
-make build-wasm # just cargo build the guest, no copy
-make clean      # nuke target/ and traildepot runtime dirs (data, secrets, backups, uploads)
-
-./tasks/test.sh         # run the full Hurl integration suite
-./tasks/test.sh -- ...  # extra args pass through to hurl
+make build      # goose build server/imagebase.goose -> server/imagebase
+make check      # goose check (type/lifetime check only, fast)
+make dev        # build + run with --dev (mails logged to stderr) and an access log
+make run        # build + run; DATA=data ADDRESS=localhost:4000
+make test       # = ./tasks/test.sh, the Hurl suite (builds, spawns its own server)
+bench/run-imagebase.sh [--duration N --concurrency N --out f.json]   # load + CPU/RSS benchmark
+bench/run-trailbase.sh [...]    # the same against the old TrailBase build, in a git worktree
 ```
 
-The test runner (`tests/tests.sh`) is self-contained: it rebuilds the wasm, spawns its own
-short-lived `trail` on a random free port, waits for `/api/auth/v1/status`, runs the Hurl
-scripts in sequence, then kills the server on exit. You do **not** need a running server.
-It shares `traildepot/data/` with any long-running `make dev` (SQLite handles the locking).
-To run a single test, invoke `hurl` directly against a running server, e.g.:
+`tests/tests.sh` is self-contained: it builds, starts `server/imagebase --dev` on a free
+port against a throwaway data dir, runs the Hurl files in order, and kills the server.
+On failure it prints the last server log lines. To run one Hurl file by hand, start
+`make dev` and use `hurl --test --variables-file tests/local.env --variable url=... --variable token=...`.
 
-```sh
-make dev   # in one terminal
-cd tests && hurl --test --variables-file local.env --variable url=http://localhost:4000 \
-    --variable token=<jwt> add-data.tests.hurl
-```
-
-First `trail` start prints an auto-generated admin password; admin UI is at
-`http://localhost:4000/_/admin/`.
+Admin tasks are CLI subcommands: `server/imagebase --data DIR user verify|delete|admin <email>`,
+`owner set <app> <email>`, `prune`, `migrate`. They work while the server runs (SQLite WAL).
 
 ## Prerequisites
 
-`trail` CLI on `$PATH`; Rust toolchain with the `wasm32-wasip2` target; plus `sqlite3`,
-`python3`, and `hurl` for the test runner. `CARGO` defaults to `$HOME/.cargo/bin/cargo` in
-the Makefile.
+`goose` v2026.4 on `$PATH`, gcc, the SQLite dev library (linked dynamically),
+plus `hurl`, `sqlite3` and `python3` for the tests.
 
 ## Architecture
 
-- **`guests/rust/src/lib.rs`** — the entire custom backend. Implements the `trailbase_wasm::Guest`
-  trait, exporting `POST /api/data/{app}` → `sync_data` (the CRDT sync protocol),
-  `GET /api/pages/{app}/{id}` → `serve_page` (public, unauthenticated read of a published HTML
-  page — see below), and the shared-space membership/invite routes under `/api/spaces/{app}` and
-  `/api/invites/{app}`. Build artifact lands at
-  `guests/rust/target/wasm32-wasip2/release/imagebase_guest.wasm` and is copied to
-  `traildepot/wasm/imagebase_guest.wasm` (gitignored) by `make deploy`.
+- **Threads.** `native/http.c` runs one epoll I/O thread that frames requests and
+  queues them. `serve()` starts N `supervise` threads; each runs a
+  `thread_spawn_contained` `worker`, which pulls requests with `ib_http_next`, runs
+  `handle()`, and answers with `ib_http_respond`. If a worker aborts, its supervisor
+  answers the in-flight request with a 500 (`ib_http_abandon`), closes its DB
+  connection so any transaction rolls back (`ib_db_reclaim`), and restarts it. Goose
+  threads share nothing: each worker has its own copy of the globals (`CFG`,
+  `JWT_KEY`, its own `DB` handle), taken at spawn.
+- **Errors** are `exception::throw(Fail { status, msg })` (`fail()` in util.goose).
+  `handle()` catches them, rolls back any open transaction and turns them into
+  text responses. Handlers just call `fail(...)`; nothing returns error codes.
+- **DB** (`db.goose` over `native/db.c`): `query(sql)` returns a cached prepared
+  statement. Always `defer finish(st)`. `begin_write()`/`commit()` take a
+  process-wide write gate in C, so writers queue instead of spinning in SQLite's
+  busy handler. Every write path uses them.
+- **Routing** is in `route()` in `imagebase.goose`: split the path into segments,
+  then match.
+- **Migrations** are `server/migrations/NNNN_*.sql`, listed in `MIGRATIONS` in
+  `maintenance.goose` and embedded at compile time. They apply in order at
+  startup, tracked in `_migrations`. Never edit a shipped one; add a new file
+  and a new entry.
 
-- **`traildepot/`** — the TrailBase depot (data dir) passed via `--depot`. `config.textproto` is the
-  server config; `migrations/main/*.sql` run at startup; `data/` (main.db, logs.db, session.db)
-  and `secrets/` are runtime-generated and gitignored.
+### The sync protocol (sync.goose)
 
-- **`tools/import-from-v.py`** — one-shot importer from a legacy V SQLite DB into TrailBase's
-  `main.db`. See README for what does/doesn't port (notably: password hashes do **not** carry
-  over — imported users must use forgot-password before they can log in).
+- `{app}` namespaces every read and write. The user comes from the verified JWT,
+  never the body.
+- `user_data` is append-only. "Latest per key" is `ROW_NUMBER() OVER (PARTITION BY
+  user|space, app, key ORDER BY id DESC)` = 1. Don't turn it into upserts.
+- `key`/`data` are stored as compact JSON text that `canon()` writes exactly as
+  serde_json did (Goose's `json::format_*` match serde's escaping and float
+  layout), and are echoed as strings.
+- Response field order matters and matches the old serde output: `data, saved,
+  conflicted, lastSyncedId, spaces`; rows are `key, data, id[, timestamp][, space]`.
+- Spaces: a row is personal (`space IS NULL`) or a space row (`user` = the
+  author). Non-members get 403 for the whole batch; `spaces` cursors are
+  per space.
 
-### The sync protocol (the core domain logic)
+## Goose gotchas hit here (v2026.4)
 
-`POST /api/data/{app}` is the only custom route. Key invariants when editing `sync_data`:
-
-- **`{app}` namespaces everything.** Every read and write is scoped by `(user, app)` so one
-  TrailBase instance backs multiple frontends with no cross-tenant reads. `user` comes from the
-  authenticated TrailBase identity (`req.user()`, base64-decoded to the UUID blob), never the body.
-
-- **`user_data` is append-only.** Each upload is an `INSERT`; there are no updates or deletes.
-  "Latest value per key" is derived at read time via `ROW_NUMBER() OVER (PARTITION BY user, app, key
-  ORDER BY id DESC)` keeping `dup = 1`. This is the last-write-wins CRDT semantics. Don't convert
-  it to upserts.
-
-- **`key` and `data` are stored as JSON-serialized text** of whatever the client sent, and echoed
-  back the same way. This deliberately matches the old V server's `@[raw]` behavior so existing
-  clients don't change their wire format. `serde_json` uses `preserve_order`.
-
-- **Response shape:** `data` = rows other clients wrote since `lastSyncedId` (excluding keys in this
-  batch), `conflicted` = rows whose key collided with this batch's keys, `saved` = the rows just
-  inserted, `lastSyncedId` = max of the incoming cursor and any ids seen/written. All writes happen
-  in a single `Transaction`.
-
-- **Shared spaces** (migration `U1792800000`). A row is either personal (`space IS NULL`, scoped by
-  `user`) or belongs to a `spaces` row whose `space_members` all read/write it as equals; for space
-  rows `user` is just the author. Items opt in with `"space": "<uuid>"`; non-members get 403 for the
-  whole batch. `lastSyncedId` covers personal rows only; `spaces: {uuid: cursor}` in the request
-  carries per-space cursors (an omitted member space starts at 0) and the response returns one for
-  every space the caller is in. Space rows in `data`/`saved`/`conflicted` carry `space`; personal
-  rows don't, so pre-spaces clients see the old wire format. Space members may also publish `pages`
-  with `space` set.
-
-- **Membership/invite routes** (all authenticated; non-members get 404, never 403, so space ids
-  can't be probed; every member has equal rights): `POST /api/spaces/{app}` creates a space with
-  the caller as sole member; `GET …/{space}/members`; `DELETE …/{space}/members/{user|me}`;
-  `POST …/{space}/invites` mints a single-use code valid 7 days; `GET /api/invites/{app}/{code}`
-  previews it; `POST /api/invites/{app}/{code}/accept` joins (a no-op for existing members, which
-  leaves the code unspent). Triggers delete a space when its last member goes and revoke a
-  member's open invites when they're removed. UUIDs come from SQLite `randomblob` (no uuid crate).
-
-- TrailBase auth endpoints live under `/api/auth/v1/*` (register/login/logout/reset_password). See
-  the README table mapping old V `/api/authentication/*` routes to their TrailBase equivalents.
-
-### Publishing HTML pages
-
-- **Writes are pure TrailBase config, not guest code.** The `pages` table (migration
-  `U1788733600`) has a `html TEXT CHECK(jsonschema('std.FileUpload', html))` column; the
-  `pages` `record_apis` entry in `config.textproto` exposes create/update/delete only.
-  `id` is a client-supplied UUID stored as a `BLOB CHECK(is_uuid(id))` PK (the Record API
-  rejects TEXT PKs; it parses the hyphenated string to bytes on write).
-- **Owner-gated.** `app_owners(app PK, owner → _user)` is the owner registry; the
-  create/update/delete access rules are `EXISTS(SELECT 1 FROM app_owners WHERE app = _REQ_.app
-  AND owner = _USER_.id)`. Populate `app_owners` out of band (admin UI / SQL). No per-row user
-  column on `pages`.
-- **Reads are the only custom code.** `serve_page` (`GET /api/pages/{app}/{id}`, no auth) looks
-  up the row, pulls the object-store id out of the `std.FileUpload` JSON, and
-  `fs::read_file`s the bytes, returning them as `text/html` **inline**. This exists solely
-  because the Record API's file endpoint hardcodes `Content-Disposition: attachment`.
-- **The guest needs the object store mounted.** `make dev`/`make run` and `tests/tests.sh` pass
-  `trail run --runtime-root-fs=<data-dir>/uploads`. That WASI preopen is **read-only** (and the
-  guest has no env vars / no raw sockets), so the guest can read uploads but cannot write files
-  anywhere — writes must stay on the Record API path. Keep the mount scoped to `uploads/`, never
-  the whole depot (`secrets/`).
+- **Compiler bug:** a bool-returning function whose `defer` is in its outermost
+  block, inlined into an `if`/`while` condition, skips the defer on the false
+  path. A skipped `finish()` leaves a read snapshot open, and the connection's
+  next write fails with SQLITE_BUSY_SNAPSHOT (517). Put the query and its defer
+  in an inner `{ }` block and return a local. Repro: `docs/goose-defer-bug.goose`,
+  upstream aardappel/goose#431; drop the workaround once a fixed release is out.
+- String literals can't span lines. Multi-line SQL uses `"""` raw strings.
+- `pad`, `in`, `type`, `block`, `self` are keywords.
+- Optionals are rebound with `.=` (`ch .= ch.next`), not `=`.
+- `Ctx` holds slices and the `out` builder together, so the checker won't let a
+  handler shrink `c.out` (`clear`, `resize`). Handlers only append. Only
+  `handle()` clears it, after its last use of `c`.
+- Typed queues are per type: never reuse one struct type for both jobs and
+  results.
+- Threads need `goose build`, not `goose run`.
 
 ## Conventions
 
-- Migrations are immutable once applied; add a new `U<timestamp>__*.sql` rather than editing an
-  existing one. Tables use `STRICT`. Deleting a `_user` deletes their personal `user_data` rows
-  (trigger) but only nulls `user` on their space rows, so shared data never rolls back.
-- The guest release profile is size-tuned (`opt-level = "s"`, `lto`, `strip`); keep it lean —
-  binary size affects the ~63 MB RSS target called out in the README.
+- Tables are `STRICT`. Ids are 16-byte BLOB UUIDs. No TrailBase SQL functions,
+  so the stock sqlite3 CLI can write the database.
+- Keep the C layer thin. Logic goes in Goose; C only moves bytes or wraps a
+  library.
+- Deleting a `_user` deletes their personal `user_data` rows (trigger) but only
+  nulls `user` on their space rows, so shared data never rolls back.

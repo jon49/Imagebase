@@ -1,6 +1,5 @@
 # Publish-an-HTML-page flow. Depends on `{{token}}` (owner of app `pages-test`,
-# seeded into `app_owners` by tests.sh) and the guest being run with
-# `--runtime-root-fs=<data-dir>/uploads` so `GET /api/pages/...` can read files.
+# seeded into `app_owners` by tests.sh via `imagebase owner set`).
 
 # 1. Owner publishes a page. `id` is a client-supplied GUID stored verbatim.
 POST {{url}}/api/records/v1/pages

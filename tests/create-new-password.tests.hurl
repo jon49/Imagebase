@@ -1,8 +1,8 @@
 # Apply a new password using the reset code from forgot-password.
 #
-# The runner must supply `reset_code` (e.g. `--variable reset_code=<jwt>`).
-# In `--dev` mode the JWT can be pulled from the server's stderr, where
-# TrailBase logs the would-be email body. The field name on the wire is
+# The runner must supply `reset_code` (e.g. `--variable reset_code=<code>`).
+# In `--dev` mode the code can be pulled from the server's stderr, where
+# it logs the would-be email body. The field name on the wire is
 # `password_reset_code`; the server also accepts `password_reset_token` as
 # an alias.
 #

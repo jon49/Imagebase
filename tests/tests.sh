@@ -1,18 +1,15 @@
 #!/usr/bin/env bash
-# Integration tests for ImageBase. Spawns its own short-lived `trail` on a free
-# port so every run starts with empty in-memory rate-limit state and `--dev`-mode
-# stderr captured to a temp file (used to auto-extract the password-reset JWT for
-# create-new-password).
+# Integration tests for ImageBase. Builds the server, spawns its own short-lived
+# instance on a free port with `--dev`, so mails go to a captured stderr log
+# (used to auto-extract the password-reset code for create-new-password).
 #
-# By default it runs against an isolated, throwaway data dir seeded from the
-# project depot, so autoincrement ids start clean (several tests assert exact
-# ids) and real dev data is never read or written. Set DATA_DIR to point the
-# tests at an existing depot instead.
+# By default it runs against an isolated, throwaway data dir, so autoincrement
+# ids start clean (several tests assert exact ids) and real dev data is never
+# read or written. Set DATA_DIR to point the tests at an existing one instead.
 
 set -euo pipefail
 
 ENV_FILE="${ENV_FILE:-local.env}"
-SRC_DEPOT="${SRC_DEPOT:-../traildepot}"
 
 cd "$(dirname "$0")"
 
@@ -21,10 +18,10 @@ if [ -n "${DATA_DIR:-}" ]; then
 else
     DATA_DIR="$(mktemp -d)"
     OWN_DATA_DIR=1
-    cp "$SRC_DEPOT/config.textproto" "$DATA_DIR/"
-    cp -r "$SRC_DEPOT/migrations" "$DATA_DIR/"
-    mkdir -p "$DATA_DIR/wasm"
 fi
+IMAGEBASE="$(cd .. && pwd)/server/imagebase"
+ib() { "$IMAGEBASE" --data "$DATA_DIR" "$@"; }
+DB="$DATA_DIR/imagebase.db"
 
 email=$(grep '^email=' "$ENV_FILE" | cut -d= -f2-)
 
@@ -34,6 +31,11 @@ LOG_FILE="$(mktemp)"
 SERVER_PID=""
 
 cleanup() {
+    status=$?
+    if [ "$status" != 0 ] && [ -s "$LOG_FILE" ]; then
+        echo "--- last server log lines ---"
+        tail -20 "$LOG_FILE"
+    fi
     if [ -n "$SERVER_PID" ] && kill -0 "$SERVER_PID" 2>/dev/null; then
         kill "$SERVER_PID" 2>/dev/null || true
         wait "$SERVER_PID" 2>/dev/null || true
@@ -45,22 +47,11 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "--- building wasm guest ---"
-(cd .. && make deploy >/dev/null)
-# make deploy copies the freshly built wasm into the source depot; mirror it
-# into the isolated data dir the test server actually runs against.
-if [ "$OWN_DATA_DIR" = 1 ]; then
-    cp "$SRC_DEPOT/wasm/imagebase_guest.wasm" "$DATA_DIR/wasm/"
-fi
+echo "--- building server ---"
+(cd .. && make build >/dev/null)
 
-# The guest reads published page files straight off the object store, which trail
-# mounts read-only at the WASM FS root. The dir must exist before trail starts.
-mkdir -p "$DATA_DIR/uploads"
-
-echo "--- starting trail on $TEST_URL ---"
-trail --depot="$DATA_DIR" run --address="localhost:$TEST_PORT" --dev --stderr-logging \
-    --runtime-root-fs="$DATA_DIR/uploads" \
-    >"$LOG_FILE" 2>&1 &
+echo "--- starting imagebase on $TEST_URL ---"
+ib --address "localhost:$TEST_PORT" --dev >"$LOG_FILE" 2>&1 &
 SERVER_PID=$!
 
 for _ in $(seq 1 100); do
@@ -68,7 +59,7 @@ for _ in $(seq 1 100); do
         break
     fi
     if ! kill -0 "$SERVER_PID" 2>/dev/null; then
-        echo "trail failed to start. Last log lines:"
+        echo "imagebase failed to start. Last log lines:"
         tail -30 "$LOG_FILE"
         exit 1
     fi
@@ -88,13 +79,9 @@ run_hurl invalid-register.tests.hurl
 echo "--- register canonical user (idempotent) ---"
 run_hurl register-user.tests.hurl
 
-# Unverified users can't log in. (`trail user verify` can't find a user whose
-# address is still unverified, so move it across directly; plain sqlite3 lacks
-# the is_email() its CHECK constraints call, and the address is already valid.)
+# Unverified users can't log in; skip opening the emailed link.
 verify() {
-    sqlite3 "$DATA_DIR/data/main.db" \
-        "PRAGMA ignore_check_constraints = ON;
-         UPDATE _user SET email = unverified_email, unverified_email = NULL WHERE unverified_email = '$1';"
+    ib user verify "$1" >/dev/null
 }
 
 echo "--- mark user verified so login can succeed ---"
@@ -110,8 +97,8 @@ token=$(hurl --variables-file "$ENV_FILE" --variable "url=$TEST_URL" login.hurl 
 echo "--- forgot-password request ---"
 run_hurl forgot-password.tests.hurl
 
-# In --dev mode trailbase logs the email body containing
-# `/_/auth/reset_password/update/<jwt>` to stderr — grab the JWT and feed
+# In --dev mode the server logs the email body containing
+# `/_/auth/reset_password/update/<code>` to stderr — grab the code and feed
 # it to create-new-password. The sleep gives the log a moment to flush.
 sleep 0.3
 RESET_CODE=$(grep -oE '/_/auth/reset_password/update/[A-Za-z0-9._-]+' "$LOG_FILE" \
@@ -124,7 +111,7 @@ else
 fi
 
 echo "--- wipe previous test rows ---"
-sqlite3 "$DATA_DIR/data/main.db" \
+sqlite3 "$DB" \
     "DELETE FROM user_data WHERE user = (SELECT id FROM _user WHERE email = '$email'); \
      DELETE FROM sqlite_sequence WHERE name = 'user_data';"
 
@@ -133,10 +120,7 @@ run_hurl --variable "token=$token" add-data.tests.hurl
 run_hurl --variable "token=$token" validation.tests.hurl
 
 echo "--- publish page: register test user as owner of app=pages-test ---"
-sqlite3 "$DATA_DIR/data/main.db" \
-    "INSERT INTO app_owners (app, owner) \
-     VALUES ('pages-test', (SELECT id FROM _user WHERE email = '$email')) \
-     ON CONFLICT(app) DO NOTHING;"
+ib owner set pages-test "$email" >/dev/null
 
 echo "--- publish page: create / fetch inline / overwrite / authz ---"
 run_hurl --variable "token=$token" publish-page.tests.hurl
@@ -154,7 +138,7 @@ token_b=$(curl -sf -X POST "$TEST_URL/api/auth/v1/login" \
     | python3 -c 'import json,sys;print(json.load(sys.stdin)["auth_token"])')
 
 echo "--- spaces: seed spaces + memberships ---"
-sqlite3 "$DATA_DIR/data/main.db" "
+sqlite3 "$DB" "
     INSERT INTO spaces (id, app) VALUES
       (X'55555555555555555555555555555555', 'spaces-test'),
       (X'66666666666666666666666666666666', 'spaces-test'),
@@ -170,7 +154,7 @@ run_hurl --variable "token=$token" --variable "token_b=$token_b" spaces.tests.hu
 echo "--- spaces: create / invite / accept / remove / leave ---"
 run_hurl --variable "token=$token" --variable "token_b=$token_b" invites.tests.hurl
 
-left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM spaces WHERE app = 'invite-test';")
+left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM spaces WHERE app = 'invite-test';")
 if [ "$left" != "0" ]; then
     echo "FAIL: memberless invite-test space was not garbage-collected (spaces=$left)"
     exit 1
@@ -181,7 +165,7 @@ fi
 echo "--- spaces: expired invites are refused ---"
 expiry_space=$(curl -sf -X POST "$TEST_URL/api/spaces/invite-test" -H "Authorization: Bearer $token" \
     | python3 -c 'import json,sys;print(json.load(sys.stdin)["space"].replace("-",""))')
-sqlite3 "$DATA_DIR/data/main.db" "
+sqlite3 "$DB" "
     INSERT INTO space_invites (code, space, created_by, expires)
       SELECT X'aaaaaaaaaaaa4aaa8aaaaaaaaaaaaaaa', X'$expiry_space', id, UNIXEPOCH() - 1 FROM _user WHERE email = '$email';
     INSERT INTO space_invites (code, space, created_by, expires)
@@ -200,15 +184,14 @@ echo "invite expiry assertions passed"
 # they wrote into a shared space (authorless), so the other members' data
 # doesn't roll back to older values.
 echo "--- spaces: delete the second user ---"
-b_space_rows=$(sqlite3 "$DATA_DIR/data/main.db" "
+b_space_rows=$(sqlite3 "$DB" "
     SELECT COUNT(*) FROM user_data
      WHERE space IS NOT NULL AND user = (SELECT id FROM _user WHERE email = '$email_b');")
-# Via `trail`, not sqlite3: the FK actions touch tables whose CHECKs call
-# TrailBase-only SQL functions (`is_uuid`, ...) the stock CLI doesn't have.
-trail --depot="$DATA_DIR" user delete "$email_b" >/dev/null 2>&1
-orphaned=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE user IS NULL AND space IS NOT NULL;")
-personal_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE value = '{\"b\":\"personal\"}';")
-s1_members=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM space_members WHERE space = X'55555555555555555555555555555555';")
+# Via the CLI, which deletes exactly as the self-service API does (FKs on).
+ib user delete "$email_b" >/dev/null
+orphaned=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE user IS NULL AND space IS NOT NULL;")
+personal_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE value = '{\"b\":\"personal\"}';")
+s1_members=$(sqlite3 "$DB" "SELECT COUNT(*) FROM space_members WHERE space = X'55555555555555555555555555555555';")
 if [ "$b_space_rows" = "0" ] || [ "$orphaned" != "$b_space_rows" ] || [ "$personal_left" != "0" ] || [ "$s1_members" != "1" ]; then
     echo "FAIL: user delete left spaces in an unexpected state" \
          "(b_space_rows=$b_space_rows orphaned=$orphaned personal_left=$personal_left s1_members=$s1_members)"
@@ -223,31 +206,21 @@ run_hurl --variable "token=$token" prune-seed.tests.hurl
 # retention window so the prune job becomes eligible to delete it. "recent" rows
 # are left untouched and must survive.
 echo "--- prune job: age the overwritten 'old' row past retention ---"
-sqlite3 "$DATA_DIR/data/main.db" "
+sqlite3 "$DB" "
     UPDATE user_data
        SET timestamp = strftime('%Y-%m-%dT%H:%M:%fZ', 'now', '-2 months')
      WHERE app = 'prune' AND key = '\"old\"'
        AND id < (SELECT MAX(id) FROM user_data WHERE app = 'prune' AND key = '\"old\"');"
 
-before=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE app = 'prune';")
+before=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE app = 'prune';")
 echo "rows under app=prune before prune: $before (expect 4)"
 
-# The admin job API requires an admin user + matching CSRF token. Promote the
-# canonical test user, then log in fresh so the token carries admin rights and
-# we capture the CSRF token that pairs with it.
-echo "--- prune job: promote test user to admin ---"
-sqlite3 "$DATA_DIR/data/main.db" "UPDATE _user SET admin = 1 WHERE email = '$email';"
+echo "--- prune job: run it on demand ---"
+ib prune
 
-login_json=$(hurl --variables-file "$ENV_FILE" --variable "url=$TEST_URL" login.hurl)
-admin_token=$(echo "$login_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["auth_token"])')
-admin_csrf=$(echo "$login_json" | python3 -c 'import json,sys; print(json.load(sys.stdin)["csrf_token"])')
-
-echo "--- prune job: trigger on demand via admin API ---"
-run_hurl --variable "token=$admin_token" --variable "csrf=$admin_csrf" prune-run.tests.hurl
-
-after=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE app = 'prune';")
-old_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE app = 'prune' AND key = '\"old\"';")
-recent_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE app = 'prune' AND key = '\"recent\"';")
+after=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE app = 'prune';")
+old_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE app = 'prune' AND key = '\"old\"';")
+recent_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE app = 'prune' AND key = '\"recent\"';")
 echo "rows under app=prune after prune: $after (expect 3)"
 
 # The aged "old" overwrite must be gone (key keeps only its latest), while both
@@ -269,14 +242,14 @@ curl -s -o /dev/null -X POST "$TEST_URL/api/auth/v1/register" \
     -H 'Content-Type: application/json' \
     -d "{\"email\":\"$email_c\",\"password\":\"$password\",\"password_repeat\":\"$password\"}"
 verify "$email_c"
-c_id=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT hex(id) FROM _user WHERE email = '$email_c';")
+c_id=$(sqlite3 "$DB" "SELECT hex(id) FROM _user WHERE email = '$email_c';")
 
 echo "--- delete account: self-service delete, stale token rejected ---"
 run_hurl delete-account.tests.hurl
 
-users_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM _user WHERE id = X'$c_id';")
-rows_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM user_data WHERE app = 'delete-test';")
-spaces_left=$(sqlite3 "$DATA_DIR/data/main.db" "SELECT COUNT(*) FROM spaces WHERE app = 'delete-test';")
+users_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM _user WHERE id = X'$c_id';")
+rows_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM user_data WHERE app = 'delete-test';")
+spaces_left=$(sqlite3 "$DB" "SELECT COUNT(*) FROM spaces WHERE app = 'delete-test';")
 if [ "$users_left" != "0" ] || [ "$rows_left" != "0" ] || [ "$spaces_left" != "0" ]; then
     echo "FAIL: account delete left data behind" \
          "(users=$users_left rows=$rows_left spaces=$spaces_left; expected 0/0/0)"

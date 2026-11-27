@@ -1,4 +1,4 @@
-# Logout against TrailBase's stateless JWT model.
+# Logout against the stateless JWT model.
 #
 # Important: POST /logout deletes the *session row* keyed on refresh_token,
 # but the auth_token (JWT) it was paired with stays valid until its TTL
